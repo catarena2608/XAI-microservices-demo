@@ -27,3 +27,9 @@ pkg/
 release/wi-kubernetes-manifests.yaml
 vendor/
 gha-creds-*.json
+
+# Khóa luận
+.env
+__pycache__/
+data/runs/
+
