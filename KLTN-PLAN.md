@@ -12,10 +12,13 @@ Ba chỗ này ban đầu KLTN.md ghi khác với code thật. **KLTN.md đã đ�
 Tracing nằm ở chỗ khác: [kustomize/components/google-cloud-operations/kustomization.yaml](kustomize/components/google-cloud-operations/kustomization.yaml) — file này vá biến env `ENABLE_TRACING=1` và `COLLECTOR_SERVICE_ADDR=opentelemetrycollector:4317` vào 8 deployment. Kèm theo nó là [otel-collector.yaml](kustomize/components/google-cloud-operations/otel-collector.yaml), và file này **không chạy được trên kind**: nó có initContainer gọi `metadata.google.internal` để lấy project id của Google Cloud, trên máy cậu địa chỉ đó không tồn tại nên pod sẽ treo ở `Init:0/1`. Exporter của nó cũng là `googlecloud`, tức đẩy trace lên GCP.
 Cách xử lý: giữ nguyên phần vá env, chỉ thay file collector bằng bản tự viết. Vì service collector của mình cũng đặt tên `opentelemetrycollector` cổng `4317` nên phần vá env dùng lại được y nguyên, không phải sửa gì.
 
-**Sự thật 2 — `cartservice` và `adservice` không phát trace.**
-`cartservice` viết bằng C#, trong code không có OpenTelemetry. `adservice` viết bằng Java, hàm `initTracing()` chỉ in ra dòng `Tracing enabled but temporarily unavailable` rồi thôi ([AdService.java:214](src/adservice/src/main/java/hipstershop/AdService.java#L214)).
-Hệ quả: tiêu chí 0.4 trong KLTN.md ("thấy trace đi qua frontend → cartservice → checkoutservice → paymentservice") không xảy ra đúng như vậy. `cartservice` sẽ không có span của chính nó.
-Nhưng vẫn cứu được: `frontend` bọc mọi kết nối gRPC bằng `otelgrpc.NewClientHandler()` ([main.go:231](src/frontend/main.go#L231)), nên **span phía người gọi** vẫn có, kèm thuộc tính `rpc.service` và `server.address` chỉ đúng vào `cartservice`. Cạnh `frontend → cartservice` trong runtime graph sẽ dựng từ thuộc tính của span client, không phải từ span server. `redis-cart` thì hoàn toàn không nhìn thấy — coi như điểm mù, ghi vào phần hạn chế của báo cáo.
+**Sự thật 2 — chỉ 7 trong 11 service phát trace.**
+Có trace: `frontend`, `productcatalogservice`, `currencyservice`, `recommendationservice`, `checkoutservice`, `paymentservice`, `emailservice`.
+Không có: `cartservice` (C#, code không import OpenTelemetry), `shippingservice` (Go, cũng không import và không đọc `ENABLE_TRACING`), `adservice` (Java, hàm `initTracing()` chỉ in `Tracing enabled but temporarily unavailable` rồi thôi — [AdService.java:214](src/adservice/src/main/java/hipstershop/AdService.java#L214)).
+Hệ quả: tiêu chí 0.4 ban đầu ("thấy trace đi qua frontend → cartservice → checkoutservice → paymentservice") không xảy ra đúng như vậy, vì `cartservice` không có span của chính nó.
+Nhưng vẫn cứu được: `frontend` ([main.go:231](src/frontend/main.go#L231)) và `checkoutservice` ([main.go:216](src/checkoutservice/main.go#L216)) đều bọc kết nối gRPC bằng `otelgrpc.NewClientHandler()`, nên **span phía người gọi** vẫn có. Các cạnh tới `cartservice` và `shippingservice` dựng từ span client, không phải từ span server. `redis-cart` thì hoàn toàn không nhìn thấy — điểm mù, ghi vào phần hạn chế của báo cáo.
+Span client **không có tag `rpc.service`** (đã kiểm chứng trên Jaeger ở bước 0.4). Nó có `rpc.method = hipstershop.CartService/GetCart` và `server.address` là **ClusterIP** chứ không phải tên service. Cách xác định đích: tra `server.address` + `server.port` vào bảng ClusterIP dựng lại mỗi lần snapshot. Chi tiết ở mục 4 KLTN.md.
+Thêm một chi tiết dễ sập: các service Go không đặt tên service trong code, chúng lấy từ biến `OTEL_SERVICE_NAME`. Thiếu biến này thì trace hiện `unknown_service` và graph vô dụng.
 
 **Sự thật 3 — danh sách service của twin ban đầu sẽ làm checkout gãy.**
 `checkoutservice` bắt buộc có 6 địa chỉ: productcatalog, shipping, payment, email, currency, cart (xem env trong [release/kubernetes-manifests.yaml](release/kubernetes-manifests.yaml)). KLTN.md bảo bỏ `currencyservice`, `shippingservice`, `emailservice` khỏi twin — bỏ xong thì đặt hàng trong twin sẽ lỗi, mà luồng đặt hàng chính là thứ cần đo.
@@ -133,7 +136,11 @@ Mục tiêu: từ cluster đang chạy, lấy ra được một object Python m�
 
 1. `src_thesis/telemetry/prometheus_client.py` — hàm `get_red_metrics(window)` trả về dict `{service: {rate, error_rate, p95_latency}}`, dựng từ `traces_span_metrics_*`. Thêm `get_resource_metrics()` lấy CPU/RAM từng pod.
 2. `src_thesis/telemetry/jaeger_client.py` — gọi API `/api/traces` của Jaeger, lấy N trace gần nhất, trả về danh sách span đã chuẩn hóa.
-3. `src_thesis/graph/runtime_graph.py` — từ danh sách span dựng graph có hướng. Quy tắc cạnh: span server → cạnh từ service cha sang service con; span client không có span server tương ứng → đọc thuộc tính `rpc.service`/`server.address` để suy ra đích. Quy tắc thứ hai là chỗ vớt lại `cartservice` (điểm lệch 2).
+3. `src_thesis/graph/runtime_graph.py` — từ danh sách span dựng graph có hướng. Hai quy tắc cạnh:
+   - Span server: cạnh từ service cha sang service con theo quan hệ span.
+   - Span client không có span server đối ứng: tra `server.address` + `server.port` vào bảng ClusterIP (lấy từ `k8s_client.list_services()`, dựng lại mỗi lần snapshot vì IP đổi khi Service tạo lại), đối chiếu chéo với phần trước dấu `/` của `rpc.method`.
+
+   Quy tắc thứ hai là chỗ vớt lại `cartservice` và `shippingservice` (sự thật 2).
 4. `data/logical_topology.yaml` — viết tay sơ đồ thiết kế 11 service theo đúng phần "Các service và quan hệ" ở mục 4 KLTN.md.
 5. `src_thesis/graph/logical_graph.py` — đọc file YAML trên thành cùng kiểu dữ liệu graph với bước 3.
 6. `src_thesis/graph/diff.py` — so hai graph, trả về: cạnh có trong thiết kế mà runtime không thấy (dấu hiệu service chết), cạnh runtime có mà thiết kế không có (gọi sai chỗ), cạnh có nhưng latency vọt bất thường.
@@ -152,14 +159,24 @@ Mục tiêu: bốn cách phá hệ thống, mỗi cách có nút hoàn tác và 
 
 1. `src_thesis/faults/injectors.py` — bốn hàm theo mục 6 KLTN.md: F1 đặt env `EXTRA_LATENCY=6s` cho `productcatalogservice` (biến này có thật, xem [server.go:88](src/productcatalogservice/server.go#L88)); F2 scale về 0; F3 xóa pod; F4 hạ `resources.limits.cpu`. Mọi hàm gọi qua `k8s_client.py`, mỗi hàm có hàm nghịch đảo tương ứng.
 2. Mỗi injector khi chạy ghi file JSON ground truth đúng cấu trúc ở mục 6 (có `expected_propagation` và `correct_action_class`).
-3. `src_thesis/faults/scenarios.yaml` — định nghĩa 5 kịch bản: F1 trên productcatalog, F2 trên currencyservice, F3 trên checkoutservice, F4 trên frontend, và một kịch bản kép F1+F2 cùng lúc.
-4. Chạy tay từng kịch bản. Với mỗi cái: tiêm lỗi, chờ 2 phút, chụp màn hình Jaeger và Prometheus, rồi hoàn tác.
+3. `src_thesis/faults/scenarios.yaml` — 6 kịch bản: S1 (F1 trên productcatalog), S2 (F2 trên currencyservice), S3 (F3 trên checkoutservice), S4 (F4 trên frontend), S5 (F4 trên productcatalog), S6 (kép F1+F2).
+4. `scripts/inject.py` — công cụ chạy tay: `--list`, `S2 --watch`, `--revert`, `--status`.
+5. Chạy tay từng kịch bản theo `recommended_order` trong file, đối chiếu kết quả với `expected_symptom`.
 
-Thành công khi: mỗi kịch bản đều nhìn thấy dấu hiệu rõ ràng — F1 làm p95 latency của productcatalog vọt lên trên 6s, F2 làm cạnh tới currencyservice biến mất trong runtime graph, F3 làm error rate nhảy vọt trong khoảng 30 giây rồi tự hồi.
+### Tình trạng: PHASE 2 XONG (2026-08-23)
+
+Cả 6 kịch bản đã chạy và kiểm chứng trọn vòng: tiêm, bắt triệu chứng, hoàn tác, hệ thống về sạch. 35 file bằng chứng trong `data/runs/`. Bảng dấu hiệu nhận dạng của từng kịch bản và bốn lỗi đã sửa nằm ở `docs/thesis-notes.md`.
+
+Hai giả định ban đầu đã bị số liệu bác bỏ, chi tiết ở `docs/thesis-notes.md`:
+
+- **F2 không tạo ra `missing_edges`** như dự đoán, mà tạo ra `error_edges`. Cạnh dựng từ span phía người gọi, nên service đích chết thì cạnh vẫn còn, chỉ mang trạng thái lỗi. `missing_edges` là chữ ký của loại hỏng khác: người gọi ngừng gọi hẳn.
+- **Phải chờ lâu hơn cửa sổ quan sát, không phải ngắn hơn.** Chờ 2 phút như kế hoạch ban đầu thì cửa sổ 5 phút vẫn chứa 3 phút dữ liệu lúc còn khỏe, số liệu bị pha loãng tới mức service đã tắt hẳn vẫn hiện `0.0% errors`. Đã nâng lên 330 giây.
+
+Thành công khi: mỗi kịch bản đều nhìn thấy dấu hiệu rõ ràng và **khớp với `expected_symptom`** đã ghi trong file. Không khớp thì sửa lại mô tả trong file cho đúng số liệu thật, đừng sửa số liệu cho vừa mô tả.
 
 Nếu kịch bản nào không tạo ra dấu hiệu quan sát được thì bỏ nó, thay bằng kịch bản khác. Lỗi mà telemetry không thấy thì XAI không có cửa đoán đúng.
 
-**Cổng chặn:** sau mỗi lần hoàn tác, hệ thống phải trở về đúng trạng thái nền đã ghi ở bước 0.3.
+**Cổng chặn:** sau mỗi lần hoàn tác, hệ thống phải trở về trạng thái sạch. `inject.py` tự kiểm tra điều này: nó chụp ảnh nền và chỉ tiêm khi diff sạch, chờ tối đa 6 phút, quá thì dừng và báo lỗi thật chưa sửa.
 
 ---
 

@@ -46,9 +46,10 @@ Xây một hệ thống tự chẩn đoán sự cố cho kiến trúc microservi
 | Nơi code | **Trực tiếp trên Windows**, VSCode như bình thường |
 | WSL2 | Cài để Docker Desktop chạy được, nhưng **không sống trong đó** |
 
-### Ngân sách RAM (đã tính, tuân thủ nghiêm)
+### Ngân sách RAM
+
+Dự trù ban đầu (ước lượng, trước khi đo):
 ```
-Windows + Chrome + VSCode        ~4.5 GB
 WSL (giới hạn qua .wslconfig)    10.0 GB
   ├─ kind control plane          ~1.0 GB
   ├─ Online Boutique (chính)     ~2.5 GB
@@ -57,14 +58,24 @@ WSL (giới hạn qua .wslconfig)    10.0 GB
   └─ còn lại cho twin            ~3.8 GB
 ```
 
-File `C:\Users\<user>\.wslconfig`:
+**Số đo thật sau bước 0.6** — thấp hơn dự trù rất nhiều, chi tiết ở `docs/thesis-notes.md`:
+```
+Online Boutique 14 pod (gồm Jaeger + Collector)   ~0.35 GB
+kube-prometheus-stack 5 pod                       ~0.71 GB
+```
+Đây là RAM *đang dùng*, chưa tính phần JVM và .NET giữ sẵn trong heap. Phần còn lại của WSL là kubelet, etcd, apiserver và bộ nhớ đệm đĩa.
+
+File `C:\Users\<user>\.wslconfig` hiện tại:
 ```ini
 [wsl2]
-memory=10GB
-processors=6
-swap=8GB
+memory=6GB
+processors=8
+swap=4GB
+autoMemoryReclaim=gradual
 ```
-Sau khi sửa: `wsl --shutdown`.
+Sau khi sửa file này **bắt buộc** chạy `wsl --shutdown`, nếu không giới hạn mới không có tác dụng.
+
+Hạ từ 10GB xuống 6GB vẫn đủ theo số đo thật, nhưng biên an toàn hẹp hơn. Chỗ dễ vỡ là phase 4, lúc namespace `twin` chạy thêm 9 pod. Dấu hiệu vượt ngưỡng là pod bị `OOMKilled`. `autoMemoryReclaim=gradual` giúp WSL trả dần RAM không dùng về lại cho Windows.
 
 ### CHIẾN LƯỢC CHẠY: KHÔNG SONG SONG
 Đã quyết định: **không chạy production và twin cùng lúc.** Vòng thí nghiệm là:
@@ -125,11 +136,31 @@ loadgenerator ── frontend   (bơm traffic tự động, có sẵn)
 ### Độ phủ tracing thực tế (đã kiểm tra trong code, không phải suy đoán)
 Không phải cả 11 service đều phát trace.
 
-- **Có span server đầy đủ (8):** `frontend`, `productcatalogservice`, `currencyservice`, `recommendationservice`, `checkoutservice`, `paymentservice`, `emailservice`, `shippingservice`.
-- **Không có OpenTelemetry (2):** `cartservice` (C#, trong code không hề import OTel) và `adservice` (Java, hàm `initTracing()` chỉ in `Tracing enabled but temporarily unavailable` rồi thoát).
+- **Có span server (7):** `frontend`, `productcatalogservice`, `currencyservice`, `recommendationservice`, `checkoutservice`, `paymentservice`, `emailservice`. Đây là 7 service đọc biến `ENABLE_TRACING` và `COLLECTOR_SERVICE_ADDR`.
+- **Không có OpenTelemetry (3):** `cartservice` (C#, trong code không hề import OTel), `shippingservice` (Go, nhưng không import OTel và không đọc `ENABLE_TRACING`), `adservice` (Java, hàm `initTracing()` chỉ in `Tracing enabled but temporarily unavailable` rồi thoát).
 - **Không nhìn thấy (1):** `redis-cart`.
 
-Cứu được phần lớn: `frontend` bọc mọi kết nối gRPC bằng `otelgrpc.NewClientHandler()`, nên **span phía người gọi** vẫn sinh ra, kèm thuộc tính `rpc.service` và `server.address` chỉ đúng vào `cartservice`. Vậy cạnh `frontend → cartservice` dựng được từ thuộc tính của span client, chỉ là không có span server của chính cartservice.
+Cứu được phần lớn: `frontend` và `checkoutservice` đều bọc kết nối gRPC bằng `otelgrpc.NewClientHandler()`, nên **span phía người gọi** vẫn sinh ra. Vậy các cạnh `frontend → cartservice`, `checkoutservice → cartservice`, `checkoutservice → shippingservice` dựng được từ span client, chỉ là không có span server của chính ba service đó.
+
+**Tag thật của span client (đã kiểm chứng trên Jaeger, otelgrpc 0.69):**
+```
+rpc.method              hipstershop.CartService/GetCart
+rpc.system.name         grpc
+rpc.response.status_code OK
+server.address          10.96.119.247        <- ClusterIP, KHÔNG phải tên service
+server.port             7070
+span.kind               client
+```
+
+Không có tag `rpc.service`. Đừng đi tìm nó.
+
+Suy ra hai cách xác định service đích, dùng cả hai để đối chiếu:
+1. **Tra IP:** `server.address` + `server.port` đối chiếu với bảng ClusterIP lấy từ `k8s_client.list_services()`. Chính xác nhất, nhưng ClusterIP đổi mỗi khi Service bị xóa và tạo lại, nên **phải dựng lại bảng tra mỗi lần chụp snapshot**, không được hardcode. Namespace `twin` có dải IP riêng nên càng bắt buộc.
+2. **Tách tên gRPC:** lấy phần trước dấu `/` của `rpc.method` được `hipstershop.CartService`, rồi ánh xạ sang tên Deployment `cartservice`. Cần một bảng ánh xạ viết tay, nhưng không phụ thuộc IP.
+
+Hệ quả về metric: spanmetrics tính RED theo `service_name` của span, nên `cartservice`, `shippingservice`, `adservice` sẽ **không có** dòng metric riêng. Độ trễ và lỗi của chúng chỉ quan sát gián tiếp qua span client bên người gọi.
+
+Về tên service trong trace: các service Go không đặt tên trong code, chúng lấy từ biến `OTEL_SERVICE_NAME`. Thiếu biến này thì trace hiện tên `unknown_service`, làm hỏng toàn bộ graph. Bắt buộc đặt đủ cho cả 7 service.
 
 Hệ quả bắt buộc nhớ:
 - `runtime_graph.py` phải có **hai quy tắc dựng cạnh**: từ quan hệ cha–con của span server, và từ thuộc tính của span client khi không có span server đối ứng.
@@ -237,6 +268,13 @@ Viết bằng Python (`kubernetes` package), không dùng bash, không dùng Cha
 }
 ```
 Không có ground truth thì không chấm điểm được agent.
+
+Bản đã cài đặt (`src_thesis/faults/injectors.py`) thêm hai thứ so với mẫu trên:
+
+- **`correct_actions`** — danh sách hành động được coi là đúng, chứ không chỉ có mức rủi ro. Cần vì kịch bản F3 có đáp án đúng là `no_action`: Kubernetes tự tạo lại pod, agent nhảy vào sửa là thừa. Không ghi rõ điều này thì không phân biệt được "sửa đúng" với "sửa thừa" ở chỉ số 5 mục 8.
+- **`expected_propagation` tính tự động** bằng cách lần ngược sơ đồ thiết kế, thay vì viết tay. Viết tay thì mỗi lần sửa `logical_topology.yaml` là đáp án lệch mà không ai biết.
+
+**Cơ chế an toàn bắt buộc:** trạng thái cũ được ghi ra `data/runs/active_fault.json` **trước** khi thực sự phá. Script chết giữa chừng, mất điện, hay lỡ đóng terminal thì vẫn hoàn tác được bằng `python scripts/inject.py --revert`. Không có cơ chế này thì một lần treo máy là cluster kẹt ở trạng thái hỏng mà không còn nhớ giá trị cũ.
 
 **Phạm vi:** 3–5 loại lỗi, không hơn. Có thể thêm kịch bản kết hợp (2 lỗi cùng lúc) nếu còn thời gian — đây là chỗ bù cho việc Online Boutique kiến trúc phẳng.
 

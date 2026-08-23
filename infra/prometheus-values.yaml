@@ -1,0 +1,69 @@
+# Cấu hình cắt gọn cho kube-prometheus-stack, chạy trên kind với ngân sách RAM 10GB.
+# Dùng: helm install mon prometheus-community/kube-prometheus-stack -f infra/prometheus-values.yaml
+
+# Alertmanager gửi cảnh báo ra ngoài (email, Slack). Khóa luận không cần, tắt để tiết kiệm RAM.
+alertmanager:
+  enabled: false
+
+# Bốn thành phần lõi của Kubernetes dưới đây chỉ mở cổng ở 127.0.0.1 bên trong node của kind,
+# Prometheus không với tới được. Bật lên chỉ tạo ra một đống mục tiêu báo đỏ gây rối mắt.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
+
+prometheus:
+  service:
+    # nodePort 30090 khớp extraPortMappings -> mở localhost:9090
+    type: NodePort
+    nodePort: 30090
+  prometheusSpec:
+    # Giữ 2 ngày dữ liệu. Mỗi ca thí nghiệm chỉ kéo dài vài phút và đã ghi ra data/runs/,
+    # nên không cần giữ lâu.
+    retention: 2d
+    retentionSize: 2GB
+    # MẶC ĐỊNH NGUY HIỂM: nếu để nguyên, Prometheus chỉ nhận ServiceMonitor có nhãn
+    # release=mon. Đặt false để nó nhận mọi ServiceMonitor trong cluster,
+    # kể cả file collector-servicemonitor.yaml của mình.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 400Mi
+      limits:
+        memory: 2Gi
+
+grafana:
+  # Giữ Grafana để chụp đồ thị đưa vào báo cáo. Hết RAM thì đặt enabled: false,
+  # đồ thị vẫn vẽ lại được bằng matplotlib từ data/runs/ ở phase 6.
+  enabled: true
+  adminPassword: kltn2026
+  service:
+    # nodePort 30300 khớp extraPortMappings -> mở localhost:3000
+    type: NodePort
+    nodePort: 30300
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+  # Không lưu dashboard tự tạo qua giao diện; xóa pod là mất. Chấp nhận được,
+  # dashboard cần cho báo cáo thì xuất ra file JSON và commit vào repo.
+  persistence:
+    enabled: false
+
+# Thu thập CPU/RAM của từng node. Nhẹ, giữ lại.
+prometheus-node-exporter:
+  enabled: true
+
+# Thu thập trạng thái đối tượng Kubernetes: số replica, pod restart bao nhiêu lần.
+# Phase 2 và phase 5 cần cái này để biết action scale đã ăn chưa.
+kube-state-metrics:
+  enabled: true

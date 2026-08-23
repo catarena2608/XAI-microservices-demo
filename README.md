@@ -6,6 +6,8 @@ Repo khóa luận. Fork từ [GoogleCloudPlatform/microservices-demo](https://gi
 
 1. [KLTN.md](KLTN.md) — bản giao việc: đề tài, ràng buộc, những thứ không làm, kiến trúc cần xây.
 2. [KLTN-PLAN.md](KLTN-PLAN.md) — kế hoạch chia 7 phase, mỗi phase có bước nhỏ và tiêu chí thành công.
+3. [docs/van-hanh.md](docs/van-hanh.md) — cách tắt project để trả RAM và cách mở lại. Đọc trước khi nghỉ tay.
+4. [docs/thesis-notes.md](docs/thesis-notes.md) — sổ ghi số liệu nền và những phát hiện trong lúc làm.
 
 ## Còn lại gì của repo gốc
 

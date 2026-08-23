@@ -1,0 +1,14 @@
+# Đổi frontend-external từ LoadBalancer sang NodePort.
+# LoadBalancer chỉ hoạt động trên đám mây; trên kind nó treo ở <pending> vĩnh viễn.
+# nodePort 30080 khớp với extraPortMappings trong kind-cluster.yaml -> mở localhost:8080.
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-external
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      nodePort: 30080

@@ -1,0 +1,29 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: boutique
+nodes:
+  - role: control-plane
+    # Mở sẵn cổng từ Windows vào trong cluster.
+    # kind KHÔNG cho thêm cổng sau khi cluster đã tạo — muốn thêm phải xóa và dựng lại.
+    # Nên khai báo dư ở đây cho cả phase 0, khỏi phải làm lại.
+    extraPortMappings:
+      # Online Boutique frontend  -> localhost:8080
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
+      # Jaeger UI                 -> localhost:16686
+      - containerPort: 30686
+        hostPort: 16686
+        protocol: TCP
+      # Prometheus UI             -> localhost:9090
+      - containerPort: 30090
+        hostPort: 9090
+        protocol: TCP
+      # Grafana                   -> localhost:3000
+      - containerPort: 30300
+        hostPort: 3000
+        protocol: TCP
+      # Metrics của OTel Collector -> localhost:8889
+      - containerPort: 30889
+        hostPort: 8889
+        protocol: TCP

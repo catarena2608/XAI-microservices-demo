@@ -1,0 +1,109 @@
+# Sơ đồ THIẾT KẾ của Online Boutique — viết tay, đối chiếu với protos/ và với
+# biến môi trường *_SERVICE_ADDR trong release/kubernetes-manifests.yaml.
+#
+# Đây là "hệ thống ĐÁNG LẼ phải trông như thế nào". So nó với sơ đồ chạy thật
+# (dựng từ trace) sẽ ra phần lệch — theo mục 7.1 KLTN.md, phần lệch này thường là
+# manh mối rõ nhất để XAI lần ra nguyên nhân gốc.
+#
+# observable: false nghĩa là cạnh này có tồn tại thật nhưng telemetry không thấy
+# được. Đánh dấu để diff.py không báo nhầm thành "service đã chết".
+
+services:
+  frontend:
+    language: go
+    traced: true
+    role: "Cổng vào HTTP, phục vụ giao diện web"
+    calls:
+      - productcatalogservice
+      - cartservice
+      - recommendationservice
+      - currencyservice
+      - adservice
+      - shippingservice
+      - checkoutservice
+
+  checkoutservice:
+    language: go
+    traced: true
+    role: "Điều phối đặt hàng: gom giỏ, tính tiền, thanh toán, gửi mail"
+    calls:
+      - cartservice
+      - productcatalogservice
+      - currencyservice
+      - shippingservice
+      - paymentservice
+      - emailservice
+
+  cartservice:
+    language: csharp
+    traced: false      # không có OpenTelemetry trong code
+    role: "Lưu giỏ hàng vào Redis"
+    calls:
+      - target: redis-cart
+        observable: false   # cartservice không phát trace nên cạnh này vô hình
+
+  productcatalogservice:
+    language: go
+    traced: true
+    role: "Danh mục sản phẩm, đọc từ file JSON. Có biến EXTRA_LATENCY để tiêm lỗi F1"
+    calls: []
+
+  recommendationservice:
+    language: python
+    traced: true
+    role: "Gợi ý sản phẩm"
+    calls:
+      - productcatalogservice
+
+  currencyservice:
+    language: nodejs
+    traced: true
+    role: "Đổi tiền tệ. Service có số request lớn nhất"
+    calls: []
+
+  paymentservice:
+    language: nodejs
+    traced: true
+    role: "Thanh toán giả lập"
+    calls: []
+
+  emailservice:
+    language: python
+    traced: true
+    role: "Gửi mail xác nhận giả lập. Chỉ chạy khi có đơn hàng hoàn tất"
+    calls: []
+
+  shippingservice:
+    language: go
+    traced: false      # là Go nhưng không import OpenTelemetry
+    role: "Tính phí và tạo đơn vận chuyển giả lập"
+    calls: []
+
+  adservice:
+    language: java
+    traced: false      # initTracing() chỉ in ra log rồi thoát
+    role: "Quảng cáo theo từ khóa"
+    calls: []
+
+  redis-cart:
+    language: redis
+    traced: false
+    role: "Kho lưu giỏ hàng"
+    calls: []
+
+  loadgenerator:
+    language: python
+    traced: false
+    role: "Bơm traffic giả lập, không thuộc hệ thống nghiệp vụ"
+    calls:
+      - target: frontend
+        observable: false   # loadgenerator gọi bằng HTTP và không phát trace
+
+# Luồng nghiệp vụ chính cần tập trung nghiên cứu (mục 4 KLTN.md).
+# Lỗi rơi vào chuỗi này là lỗi đáng quan tâm nhất.
+critical_path:
+  - frontend
+  - productcatalogservice
+  - cartservice
+  - checkoutservice
+  - paymentservice

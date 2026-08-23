@@ -1,0 +1,136 @@
+# Component bật tracing, trỏ về collector nội bộ.
+# Viết lại từ kustomize/components/google-cloud-operations, khác 3 điểm:
+#   1. Dùng otel-collector.yaml bản nội bộ (xuất về Jaeger, không phải Google Cloud).
+#   2. Bỏ toàn bộ phần Cloud Profiler — nó gọi ra Google Cloud, chỉ tổ sinh log lỗi.
+#   3. Bỏ shippingservice: code service này không import OpenTelemetry và không đọc
+#      ENABLE_TRACING, đặt biến vào cũng vô ích.
+#
+# 7 service dưới đây là toàn bộ những service thực sự phát trace được.
+# OTEL_SERVICE_NAME bắt buộc phải có: các service Go không đặt tên trong code,
+# thiếu biến này thì trace hiện tên unknown_service và graph vô dụng.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - otel-collector.yaml
+
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: frontend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                - name: ENABLE_TRACING
+                  value: "1"
+                - name: COLLECTOR_SERVICE_ADDR
+                  value: "opentelemetrycollector:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "frontend"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: productcatalogservice
+      spec:
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                - name: ENABLE_TRACING
+                  value: "1"
+                - name: COLLECTOR_SERVICE_ADDR
+                  value: "opentelemetrycollector:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "productcatalogservice"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: checkoutservice
+      spec:
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                - name: ENABLE_TRACING
+                  value: "1"
+                - name: COLLECTOR_SERVICE_ADDR
+                  value: "opentelemetrycollector:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "checkoutservice"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: currencyservice
+      spec:
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                - name: ENABLE_TRACING
+                  value: "1"
+                - name: COLLECTOR_SERVICE_ADDR
+                  value: "opentelemetrycollector:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "currencyservice"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: paymentservice
+      spec:
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                - name: ENABLE_TRACING
+                  value: "1"
+                - name: COLLECTOR_SERVICE_ADDR
+                  value: "opentelemetrycollector:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "paymentservice"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: emailservice
+      spec:
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                - name: ENABLE_TRACING
+                  value: "1"
+                - name: COLLECTOR_SERVICE_ADDR
+                  value: "opentelemetrycollector:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "emailservice"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: recommendationservice
+      spec:
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                - name: ENABLE_TRACING
+                  value: "1"
+                - name: COLLECTOR_SERVICE_ADDR
+                  value: "opentelemetrycollector:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "recommendationservice"

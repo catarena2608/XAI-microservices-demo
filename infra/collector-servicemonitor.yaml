@@ -1,0 +1,23 @@
+# Bảo Prometheus tới lấy metric ở cổng 8889 của OTel Collector.
+# Đây là đường để RED metrics từ spanmetrics chảy vào Prometheus, rồi phase 1
+# truy vấn bằng PromQL trong src_thesis/telemetry/prometheus_client.py.
+#
+# ServiceMonitor là kiểu đối tượng do kube-prometheus-stack tạo ra, nên file này
+# CHỈ apply được SAU KHI đã helm install. Vì vậy nó không nằm trong infra/kustomization.yaml.
+# Chạy: kubectl apply -f infra/collector-servicemonitor.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: otel-collector
+  labels:
+    release: mon
+spec:
+  selector:
+    matchLabels:
+      # Bắt đúng Service ClusterIP, không dính bản -external (xem nhãn trong otel-collector.yaml).
+      monitoring: otel-collector
+  endpoints:
+    - port: prometheus      # tên cổng đã đặt trong Service, không phải số cổng
+      interval: 15s
+      # Khớp với metrics_flush_interval: 15s của spanmetrics. Lấy dày hơn cũng vô ích
+      # vì collector chỉ cập nhật 15 giây một lần.

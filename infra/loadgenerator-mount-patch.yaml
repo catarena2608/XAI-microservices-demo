@@ -1,0 +1,19 @@
+# Gan de /loadgen/locustfile.py trong container bang file trong ConfigMap.
+# subPath nghia la chi thay dung mot file, phan con lai cua thu muc giu nguyen.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgenerator
+spec:
+  template:
+    spec:
+      containers:
+        - name: main
+          volumeMounts:
+            - name: locustfile
+              mountPath: /loadgen/locustfile.py
+              subPath: locustfile.py
+      volumes:
+        - name: locustfile
+          configMap:
+            name: loadgenerator-locustfile

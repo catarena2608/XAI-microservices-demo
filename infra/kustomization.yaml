@@ -1,0 +1,19 @@
+# Bản triển khai chính của khóa luận.
+# Chạy: kubectl apply -k infra/
+#
+# Gồm: Online Boutique gốc + Jaeger + OTel Collector nội bộ + bật tracing cho 7 service
+# + đổi frontend sang NodePort để vào được từ localhost:8080.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../release          # Online Boutique bản gốc, image pin ở v0.10.6
+  - jaeger-all-in-one.yaml
+  - loadgenerator-locustfile.yaml   # bộ sinh tải đã bỏ nhiễu số thẻ ngẫu nhiên
+
+components:
+  - ./tracing-local     # vá ENABLE_TRACING + dựng collector
+
+patches:
+  - path: frontend-nodeport-patch.yaml
+  - path: loadgenerator-mount-patch.yaml

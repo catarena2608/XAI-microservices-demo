@@ -1,0 +1,7 @@
+# Bọc manifest gốc thành một "base" để infra/ tham chiếu tới.
+# Cần file này vì kustomize cấm trỏ thẳng vào một file nằm ngoài thư mục gốc của nó,
+# nhưng cho phép trỏ vào một thư mục có kustomization.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - kubernetes-manifests.yaml

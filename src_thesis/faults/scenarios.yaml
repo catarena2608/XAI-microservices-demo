@@ -1,0 +1,111 @@
+# Các kịch bản lỗi dùng cho toàn bộ thí nghiệm.
+#
+# Mục 6 KLTN.md giới hạn 3 tới 5 loại lỗi, không hơn. Ở đây có 5 kịch bản đơn và
+# 1 kịch bản kép — kịch bản kép là chỗ bù cho việc Online Boutique kiến trúc phẳng,
+# lỗi ít lan tầng sâu.
+#
+# `wait_after_inject_s` là thời gian phải chờ trước khi đo. Đo thật ở lần chạy S2
+# đầu tiên cho thấy phải chờ LÂU HƠN cửa sổ quan sát, không phải ngắn hơn:
+#
+#   Cửa sổ quan sát của snapshot là 5 phút (300 giây). Chờ 180 giây rồi mới đo thì
+#   cửa sổ vẫn chứa 120 giây dữ liệu của lúc hệ thống còn khỏe, làm số liệu bị pha
+#   loãng — currencyservice vẫn hiện 2.66 req/s với 0% lỗi dù đã tắt hẳn 3 phút.
+#
+# Nên đặt 330 giây cho các kịch bản lỗi kéo dài. Riêng S3 giữ 120 giây, vì lỗi đó
+# chỉ kéo dài khoảng 30 giây rồi tự khỏi — chờ lâu thì cửa sổ trôi qua mất triệu chứng.
+#
+# Hệ quả về thời gian chạy toàn bộ thí nghiệm ở phase 6: 3 chế độ x 5 kịch bản x 5 lần
+# x khoảng 6 phút mỗi ca là khoảng 7 tiếng rưỡi. Tính vào kế hoạch, đừng để sát hạn.
+
+scenarios:
+  - id: S1
+    fault: F1
+    target: productcatalogservice
+    params:
+      extra_latency: 6s
+    wait_after_inject_s: 330
+    description: >
+      Service danh mục sản phẩm chậm 6 giây mỗi lần gọi. Đây là service có lưu lượng
+      lớn nhất và nằm trên luồng nghiệp vụ chính, nên độ trễ lan ra rất rõ.
+    expected_symptom: >
+      slow_edges xuất hiện trên frontend->productcatalogservice,
+      checkoutservice->productcatalogservice và recommendationservice->productcatalogservice.
+      Kèm theo p95 của frontend tăng vọt.
+
+  - id: S2
+    fault: F2
+    target: currencyservice
+    wait_after_inject_s: 330
+    description: >
+      Service đổi tiền tệ bị tắt hẳn. Chọn service này vì cả frontend lẫn
+      checkoutservice đều gọi nó, nên lỗi lan theo hai nhánh khác nhau.
+    expected_symptom: >
+      error_edges (KHÔNG phải missing_edges) trên checkoutservice->currencyservice,
+      frontend->currencyservice, và lan sang frontend->checkoutservice với tỉ lệ lỗi
+      bằng đúng nhánh gốc. Đo thật lần đầu: 58.8%, 26.5%, 58.8%.
+
+  - id: S3
+    fault: F3
+    target: checkoutservice
+    wait_after_inject_s: 120
+    description: >
+      Xóa pod checkoutservice đột ngột (grace_period 0, không cho dọn dẹp).
+      Kubernetes tự tạo lại sau khoảng 30 giây. Đây là kịch bản KIỂM TRA AGENT CÓ
+      BIẾT KHÔNG LÀM GÌ hay không. Tín hiệu chính là TUỔI POD, không phải số lần
+      khởi động lại — xóa pod tạo ra pod mới với restarts=0.
+    expected_symptom: >
+      POD HEALTH báo checkoutservice "pod was RECREATED ... ago". Có thể kèm error_edges
+      ngắn hạn trên frontend->checkoutservice, nhưng KHÔNG chắc chắn: checkout chỉ
+      khoảng 4 lần mỗi phút nên khoảng trống dễ rơi vào lúc không có đơn nào.
+      Lần chạy đầu tiên cho 0/18 lỗi và không một triệu chứng nào — xem thesis-notes.
+
+  - id: S4
+    fault: F4
+    target: frontend
+    params:
+      cpu: 10m
+    wait_after_inject_s: 330
+    description: >
+      Bóp trần CPU của frontend xuống 1% một lõi. Frontend là cổng vào duy nhất nên
+      mọi thứ chậm theo, nhưng nguyên nhân gốc nằm ở hạ tầng chứ không ở logic.
+    expected_symptom: >
+      p95 của frontend tăng mạnh, mọi cạnh xuất phát từ frontend chậm theo,
+      CPU của pod frontend chạm trần trong metric hạ tầng.
+
+  - id: S5
+    fault: F4
+    target: productcatalogservice
+    params:
+      cpu: 10m
+    wait_after_inject_s: 330
+    description: >
+      Cùng một service với S1 nhưng nguyên nhân khác: nghẹt CPU thay vì chậm chủ đích.
+      Cặp S1 và S5 dùng để kiểm tra XAI có phân biệt được hai nguyên nhân cho cùng
+      một triệu chứng bề mặt hay không — đây là ca khó nhất trong bộ đơn lỗi.
+    expected_symptom: >
+      Triệu chứng bề mặt giống hệt S1 (productcatalogservice chậm), nhưng khác ở chỗ
+      metric CPU của pod chạm trần. Phân biệt được hay không nằm ở chỗ XAI có đọc
+      metric hạ tầng hay chỉ nhìn RED metrics.
+
+  - id: S6
+    fault: combined
+    steps:
+      - fault: F1
+        target: productcatalogservice
+        params:
+          extra_latency: 6s
+      - fault: F2
+        target: currencyservice
+    wait_after_inject_s: 330
+    description: >
+      Hai lỗi cùng lúc trên hai service khác nhau. Chỉ chạy khi 5 kịch bản đơn đã
+      cho kết quả ổn định.
+    expected_symptom: >
+      Vừa có slow_edges của productcatalogservice vừa có error_edges của
+      currencyservice. Kiểm tra XAI có báo cáo được HAI nguyên nhân gốc hay chỉ
+      bám lấy cái rõ nhất rồi bỏ qua cái kia.
+
+# Thứ tự chạy đề nghị: S3 trước vì nó tự hồi phục và ít rủi ro nhất, rồi S2, S1,
+# S5, S4, cuối cùng S6. S4 để gần cuối vì bóp CPU của frontend là ca dễ làm web
+# không truy cập được nhất.
+recommended_order: [S3, S2, S1, S5, S4, S6]

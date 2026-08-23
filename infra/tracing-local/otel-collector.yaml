@@ -1,0 +1,153 @@
+# OTel Collector bản nội bộ — thay cho bản của Google (bản gốc đẩy trace lên Google Cloud
+# và có initContainer gọi metadata.google.internal nên treo vĩnh viễn trên kind).
+#
+# Tên Service và cổng giữ nguyên là opentelemetrycollector:4317 để phần vá biến env
+# trong kustomization.yaml dùng lại được y nguyên, không phải sửa dòng nào.
+#
+# Hai việc collector làm:
+#   1. Nhận trace từ 7 service -> chuyển tiếp sang Jaeger để xem bằng mắt.
+#   2. Đọc chính đống trace đó -> tự tính RED metrics (rate, error, duration) -> mở ở cổng 8889.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+data:
+  collector-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            # BẮT BUỘC ghi 0.0.0.0. Từ collector v0.104 mặc định chỉ nghe localhost,
+            # tức chỉ nghe bên trong chính container -> các service gửi vào sẽ bị từ chối.
+            endpoint: 0.0.0.0:4317
+
+    processors:
+      batch:
+        timeout: 5s
+
+    connectors:
+      # connector = vừa là nơi nhận, vừa là nơi phát. Nhận trace, phát ra metric.
+      spanmetrics:
+        namespace: traces.span.metrics
+        histogram:
+          explicit:
+            # Mốc chia độ trễ.
+            # Đầu dải phải mịn: đo thật ở bước 0.7 cho thấy phần lớn service trả lời
+            # dưới 5ms, để mốc nhỏ nhất là 5ms thì mọi service đều ra p50=2.5ms
+            # giống hệt nhau, vô dụng khi so sánh trước và sau khi tiêm lỗi.
+            # Cuối dải phải có 10s và 30s vì kịch bản F1 tiêm EXTRA_LATENCY=6s.
+            buckets: [0.5ms, 1ms, 2ms, 3ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2s, 5s, 10s, 30s]
+        dimensions:
+          # Nhãn thêm vào mỗi metric. server.address cho biết span client gọi tới IP nào
+          # -> đây là đường để đo được cartservice và shippingservice dù chúng không phát trace.
+          - name: rpc.method
+          - name: server.address
+          - name: server.port
+        exemplars:
+          enabled: false
+        metrics_flush_interval: 15s
+
+    exporters:
+      otlp/jaeger:
+        endpoint: jaeger:4317
+        tls:
+          insecure: true
+      prometheus:
+        endpoint: 0.0.0.0:8889
+      # In số span đã xử lý ra log của collector — dùng để soi khi không thấy trace.
+      debug:
+        verbosity: basic
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          # spanmetrics đứng ở đây với vai trò nơi nhận: trace vừa sang Jaeger vừa sang nó.
+          exporters: [otlp/jaeger, spanmetrics, debug]
+        metrics:
+          # ...rồi ở đây nó đóng vai nơi phát: metric nó tính ra được đẩy sang Prometheus.
+          receivers: [spanmetrics]
+          processors: [batch]
+          exporters: [prometheus]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opentelemetrycollector
+  labels:
+    app: opentelemetrycollector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opentelemetrycollector
+  template:
+    metadata:
+      labels:
+        app: opentelemetrycollector
+    spec:
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.155.0
+          args:
+            - --config=/conf/collector-config.yaml
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+          ports:
+            - containerPort: 4317
+            - containerPort: 8889
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-config
+            items:
+              - key: collector-config.yaml
+                path: collector-config.yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opentelemetrycollector
+  labels:
+    app: opentelemetrycollector
+    # Nhãn riêng để ServiceMonitor bắt đúng service này, không dính sang bản -external.
+    # Dính cả hai thì Prometheus lấy trùng một pod hai lần, số liệu nhân đôi.
+    monitoring: otel-collector
+spec:
+  type: ClusterIP
+  selector:
+    app: opentelemetrycollector
+  ports:
+    - name: grpc-otlp
+      port: 4317
+      targetPort: 4317
+    # Cổng này để Prometheus trong cluster tới lấy metric (bước 0.6).
+    - name: prometheus
+      port: 8889
+      targetPort: 8889
+---
+# Mở metric ra ngoài để tự mở bằng trình duyệt: nodePort 30889 -> localhost:8889
+apiVersion: v1
+kind: Service
+metadata:
+  name: opentelemetrycollector-external
+  labels:
+    app: opentelemetrycollector
+spec:
+  type: NodePort
+  selector:
+    app: opentelemetrycollector
+  ports:
+    - name: prometheus
+      port: 8889
+      targetPort: 8889
+      nodePort: 30889
