@@ -1,0 +1,87 @@
+{
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "runs_per_scenario": 1,
+  "overall": {
+    "n": 1,
+    "root_cause_accuracy": 1.0,
+    "root_cause_std": 0.0,
+    "propagation_mean": 1.0,
+    "propagation_std": 0.0,
+    "action_accuracy": 1.0,
+    "fault_type_accuracy": 1.0,
+    "mean_confidence": 0.96
+  },
+  "per_scenario": {
+    "S2": {
+      "n": 1,
+      "root_cause_accuracy": 1.0,
+      "root_cause_std": 0.0,
+      "propagation_mean": 1.0,
+      "propagation_std": 0.0,
+      "action_accuracy": 1.0,
+      "fault_type_accuracy": 1.0,
+      "mean_confidence": 0.96
+    }
+  },
+  "records": [
+    {
+      "scenario": "S2",
+      "run": 1,
+      "ok": true,
+      "score": {
+        "scenario": "S2",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": true,
+        "confidence": 0.96,
+        "fault_type_correct": true,
+        "predicted_root": "currencyservice",
+        "expected_root": "currencyservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "currencyservice",
+          "fault_type": "crash",
+          "confidence": 0.96,
+          "reasoning_chain": [
+            "Multiple callers (checkoutservice and frontend) show high error rates to currencyservice (58.8% and 26.5%).",
+            "Errors also appear on frontend->checkoutservice at the same 58.8% rate, indicating downstream propagation.",
+            "Pod health report shows currencyservice has NO PODS AT ALL, confirming it is down.",
+            "Server-side metrics for currencyservice are stale (0.0% errors, low p95) and cannot mask the missing pods.",
+            "Therefore currencyservice is the root cause; its crash propagates errors to checkoutservice and then to frontend."
+          ],
+          "propagation_path": [
+            "checkoutservice",
+            "frontend"
+          ],
+          "evidence": [
+            "checkoutservice -> currencyservice: 58.8% errors (10/17 calls)",
+            "frontend -> checkoutservice: 58.8% errors (10/17 calls)",
+            "frontend -> currencyservice: 26.5% errors (52/196 calls)",
+            "currencyservice: NO PODS AT ALL",
+            "currencyservice p95 0.48ms (stale metric, no current pods)"
+          ],
+          "proposed_actions": [
+            {
+              "action": "scale_up",
+              "target": "currencyservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "currencyservice has no running pods, causing request failures; scaling up will recreate pods and restore service."
+            }
+          ]
+        },
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "attempts": 1,
+        "input_tokens": 3282,
+        "output_tokens": 1120,
+        "latency_s": 4.48,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    }
+  ]
+}

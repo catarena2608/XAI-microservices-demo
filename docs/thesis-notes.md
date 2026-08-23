@@ -442,6 +442,203 @@ Bài học chung để viết vào báo cáo: **hàm hoàn tác phải được 
 
 ### Phase 3 — XAI
 
+**Ngày 2026-08-23 — code phase 3 xong, chờ khóa API để chạy.**
+
+Sáu file: `xai/schema.py`, `xai/prompt_templates.py`, `xai/reasoner.py`, `eval/metrics.py`, `eval/replay.py`, `scripts/eval_xai.py`.
+
+**Quyết định thiết kế quan trọng nhất: đánh giá chạy trên snapshot đã lưu, không đụng cluster.**
+
+`eval/replay.py` dựng lại đoạn prompt từ file JSON trong `data/runs/`, và ghép mỗi snapshot với file ground truth ghi gần nhất trước nó. Ghép được 7 ca từ dữ liệu phase 2 mà không phải tiêm lỗi lại lần nào.
+
+Lý do làm vậy: nếu mỗi lần sửa prompt lại phải tiêm lỗi lại thì mất 30 phút một lượt, và tệ hơn là mỗi lượt ra một trạng thái hệ thống hơi khác nên **không so sánh được prompt mới với prompt cũ**. Giữ nguyên đầu vào, chỉ đổi prompt — đó là cách duy nhất để biết prompt tốt lên thật hay chỉ gặp may.
+
+Cách dựng lại: tạo object nhẹ có đúng các thuộc tính mà `serialize.py` cần rồi gọi lại chính các hàm đó, không chép lại logic sinh text. Hai bản chép sẽ lệch nhau ngay lần sửa đầu tiên.
+
+**Ba thay đổi so với mục 7.2 KLTN.md, đều có lý do từ phase 2:**
+
+1. Thêm hành động `no_action` vào schema. Kịch bản S3 có đáp án đúng là không làm gì; thiếu lựa chọn này thì agent buộc phải chọn một hành động nào đó và không đo được chỉ số 5 "wasted action count".
+2. `params` dùng `dict[str, str]` thay vì dict tự do, vì structured output cần schema đóng.
+3. Prompt nhồi thẳng 7 quy tắc đọc dữ liệu rút ra từ phase 2 — hướng cạnh chậm, so p95 phía server với độ trễ phía người gọi, service chết tạo cạnh lỗi chứ không phải cạnh mất, thông lượng sụp sinh cạnh mất giả, tỉ lệ lỗi lan truyền bằng nhau, pod tạo lại không đồng nghĩa pod chết, vắng metric không đồng nghĩa đã chết.
+
+**Chỉ số propagation dùng Jaccard** chứ không dùng tỉ lệ bao phủ. Jaccard phạt cả bỏ sót lẫn kể thừa; dùng bao phủ đơn thuần thì model cứ liệt kê đủ 11 service là đạt điểm tuyệt đối.
+
+**Chấm hành động chỉ xét hành động ĐẦU TIÊN**, vì phase 5 agent cũng chỉ thực hiện cái đầu tiên. Xét cả danh sách thì model cứ đề xuất đủ bảy hành động là chắc chắn trúng.
+
+**Ba khoản nợ phase 2 đã trả trước khi viết prompt:** thêm truy vấn CPU so với trần (`cpu_vs_limit`), thêm mục CPU vào prompt cho các service bị nghi là chậm, và lọc pod hạ tầng (`jaeger`, `opentelemetrycollector`, `loadgenerator`) khỏi phần POD HEALTH.
+
+**Chọn nhà cung cấp LLM: hai tầng Groq + OpenAI.**
+
+Máy không có khóa Anthropic, nhưng có sẵn khóa OpenAI và gói Groq miễn phí. Mục 7.5 KLTN.md vốn đã yêu cầu hai tầng "model rẻ cho chạy loạt, model mạnh cho demo và bảng cuối", nên hai khóa sẵn có khớp đúng vào đó mà không phải mua thêm gì.
+
+- **Tầng chạy loạt: Groq**, model mở `openai/gpt-oss-120b`, miễn phí. Không rơi vào cái bẫy 7–8B mà mục 3 KLTN.md đã loại.
+- **Tầng demo và bảng cuối: OpenAI.**
+
+`reasoner.py` viết bằng thư viện OpenAI vì **Groq phục vụ theo đúng giao thức của OpenAI**, chỉ khác địa chỉ máy chủ. Một bộ code chạy được cả hai, đổi nhà cung cấp là đổi một dòng cấu hình. Nhờ vậy so sánh được hai model trên **cùng bộ dữ liệu đầu vào** — đây là một kết quả phụ đáng đưa vào báo cáo, cho thấy phương pháp phụ thuộc vào năng lực model đến mức nào.
+
+**Ba chỗ phải xử lý vì chạy đa nhà cung cấp:**
+
+1. *Schema nghiêm ngặt.* Chế độ `json_schema` của OpenAI đòi mọi object khai báo đủ thuộc tính và cấm thuộc tính lạ. Pydantic không tự sinh đúng vậy nên có hàm `strict_schema()` sửa lại. Kèm theo, `params` trong `ProposedAction` đổi từ từ điển sang **danh sách cặp khóa-giá trị** — từ điển tự do không hợp schema nghiêm ngặt.
+2. *Tự hạ cấp khi không hỗ trợ.* Nhà cung cấp nào từ chối `json_schema` thì `reasoner.py` tự chuyển sang chế độ "chỉ cần JSON hợp lệ" và nhét schema vào prompt, chỉ thử một lần rồi nhớ luôn. Pydantic vẫn validate và vẫn retry như cũ, nên chất lượng đầu ra không phụ thuộc vào việc nhà cung cấp có hỗ trợ hay không.
+3. *Hạn mức gói miễn phí.* Gặp lỗi 429 thì chờ 20 giây rồi thử lại. Cần cho phase 6 chạy 150 lượt liên tục.
+
+**Ước tính khối lượng phase 3** (6 kịch bản × 5 lần): khoảng 57.500 token vào và 27.000 token ra. Groq miễn phí nên 0 đồng; OpenAI khoảng 0.07 USD. Gói Groq miễn phí thừa sức cho phase 3; phase 6 gấp khoảng 5 lần, có thể chạm hạn mức mỗi phút nhưng đã có cơ chế chờ và thử lại.
+
+**Groq gỡ hết dòng Llama, phải đổi model.** Lần gọi đầu tiên trả về lỗi:
+
+```
+API 404: The model `llama-3.3-70b-versatile` does not exist
+```
+
+Hỏi thẳng danh sách model của tài khoản (`GET /v1/models`) thì thấy Groq chỉ còn `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.6-27b` và mấy model chuyển giọng nói. Đổi mặc định sang **`openai/gpt-oss-120b`** — model mở 120 tỉ tham số, còn mạnh hơn mức 70B đã tính ban đầu, nên lập luận "không rơi vào bẫy 7–8B" ở trên vẫn đứng vững.
+
+Bài học đưa vào báo cáo: **tên model của nhà cung cấp là thứ hết hạn**. Khóa luận viết trong nhiều tháng mà model bị gỡ giữa chừng thì thí nghiệm cũ không chạy lại được. Vì vậy `reasoner.py` cho phép ghi đè tên model bằng biến môi trường `KLTN_GROQ_MODEL`, và mỗi file kết quả trong `data/eval/` đều ghi kèm tên model đã dùng.
+
+**Hai lỗi làm S2 chẩn đoán sai, phát hiện ngay lần chạy thật đầu tiên.**
+
+Lần đầu chạy `--once S2`, model đoán `checkoutservice / resource_exhaustion` trong khi đáp án là `currencyservice / crash`. Đọc chuỗi suy luận nó xuất ra thì thấy nó **không hề ẩu**, nó lập luận chặt trên dữ liệu được đưa. Lỗi nằm ở dữ liệu và ở prompt, không nằm ở model.
+
+*Lỗi 1 — snapshot giấu mất bằng chứng mạnh nhất.* Kịch bản S2 hạ số bản sao của `currencyservice` về 0, tức là không còn pod nào mang tên đó nữa. Nhưng phần POD HEALTH chỉ ghi:
+
+```
+POD HEALTH:
+  all 10 pods ready, no restarts
+```
+
+Đáng lẽ phải có 11. Nguyên nhân: `describe_pods()` duyệt danh sách pod **đang tồn tại** rồi lọc ra pod bất thường — mà một deployment đã biến mất thì không còn dòng nào để duyệt. Đây là một lớp lỗi đáng ghi vào báo cáo: **telemetry chỉ báo cáo những gì đang tồn tại, nên sự vắng mặt là thứ nó không bao giờ tự nói ra.** Muốn thấy cái thiếu thì phải có danh sách cái đáng lẽ phải có mà đối chiếu.
+
+Sửa: thêm `expected_deployments()` lấy danh sách deployment nghiệp vụ từ sơ đồ thiết kế, đối chiếu với các deployment đang chạy, và in thẳng dòng:
+
+```
+POD HEALTH:
+  currencyservice: NO PODS AT ALL - deployment scaled to 0 or every pod is gone
+  the other 10 pods are ready, no restarts
+```
+
+*Lỗi 2 — prompt dạy cách đọc cạnh chậm nhưng quên cạnh lỗi.* Bảy quy tắc ban đầu có "cạnh chậm hội tụ vào đâu thì đó là nguyên nhân", nhưng không có quy tắc tương ứng cho cạnh lỗi. Model thấy `checkoutservice` tự báo 65.4% lỗi nên quy tội cho nó, dù 65.4% đó chính là lỗi nó **chuyển tiếp** từ `currencyservice`.
+
+Thêm bốn quy tắc, đều rút từ số liệu đo được của chính S2:
+
+1. **Cạnh lỗi hội tụ vào thủ phạm.** Hai người gọi khác nhau (`frontend` và `checkoutservice`) cùng lỗi khi gọi `currencyservice` thì `currencyservice` là nguyên nhân. Hai service độc lập không hỏng cùng lúc do trùng hợp.
+2. **Tỉ lệ lỗi của một service bao gồm cả lỗi nó chuyển tiếp.** Service nào tự báo lỗi cao mà cạnh gọi ra của nó cũng đang lỗi thì nó là **nạn nhân**, không phải thủ phạm. Phải đi theo cạnh đó xuống dưới trước khi kết luận.
+3. **Callee báo 0% lỗi không có nghĩa là nó vô can.** Metric phía server chỉ đếm request đã đến được server. Service chết thì request không tới nơi, nên tỉ lệ lỗi của chính nó đứng yên ở 0% và p95 vẫn thấp — đúng như S2: `currencyservice: 2.66 req/s, 0.0% errors, p95 0.48ms` trong khi nó đã tắt hẳn. Cửa sổ quan sát rộng 5 phút còn giữ lại lưu lượng của lúc chưa hỏng, càng làm số liệu trông sạch.
+4. **Đọc POD HEALTH trước khi tin bất kỳ metric nào.** Dòng `NO PODS AT ALL` là kết luận, không phải manh mối.
+
+Sau khi sửa cả hai, S2 đúng cả bốn chỉ số: root cause `currencyservice`, loại lỗi `crash`, độ tin cậy 0.96, Jaccard lan truyền 1.00, hành động đúng.
+
+**Vì sao đây không phải là gian lận điểm.** Cả hai sửa đổi đều **thêm dữ liệu mà một kỹ sư vận hành thật luôn nhìn thấy** (`kubectl get pods` hiện ngay là thiếu một deployment) và **thêm quy tắc đọc dữ liệu, không thêm đáp án**. Prompt không hề nhắc tên `currencyservice` hay tên kịch bản nào. Bốn quy tắc mới là kiến thức chung về hệ phân tán, áp dụng được cho cả 6 kịch bản chứ không riêng S2 — và đó chính là điều `--runs 5` trên cả 6 kịch bản dùng để kiểm chứng.
+
+**Đổi `PROMPT_VERSION` từ `v1` sang `v2`** khi sửa prompt, vì khóa cache có kèm số phiên bản. Không đổi thì lần chạy sau lấy lại kết quả của prompt cũ và tưởng là prompt mới không cải thiện gì.
+
+**Hạn mức Groq gói miễn phí là 8000 token MỖI PHÚT, không phải mỗi ngày.**
+
+Loạt chạy đầu tiên treo 16 phút không in ra dòng nào rồi hàng loạt lượt thất bại. Đọc header trả về mới ra nguyên nhân:
+
+```
+x-ratelimit-limit-tokens = 8000
+```
+
+Một lần chẩn đoán tốn khoảng 5000 token vào cộng 900 ra, tức là **chỉ lọt đúng một lượt mỗi phút**. Code cũ chờ cứng 20 giây nên lần thử nào cũng rơi lại vào đúng cửa sổ đang bị chặn. Hệ quả cho phase 6: chạy 150 lượt trên Groq mất ít nhất 2 tiếng rưỡi vì lý do hạn mức, không phải vì model chậm. Phải tính vào kế hoạch.
+
+Sửa: đọc thẳng header `retry-after` và `x-ratelimit-reset-tokens` xem nhà cung cấp bảo chờ bao lâu, thay vì đoán một con số.
+
+**Lỗi hạn mức tiêu vào cùng quỹ thử lại với lỗi sai schema.** Bị chặn ba lần liên tiếp là mất trắng lượt đó, dù model chưa hề trả lời sai lần nào. Đã tách thành hai quỹ riêng: `max_retries` cho lỗi suy luận, `max_rate_limit_waits` cho lỗi hạn mức. Bị chặn không phải là suy luận sai nên không đáng bị trừ lượt.
+
+**Ba bài học về ghi log của một loạt chạy dài**, đều trả giá bằng thời gian thật:
+
+1. *Python đệm đầu ra khi bị chuyển hướng vào file.* Loạt chạy im lặng 16 phút, không phân biệt được đang chờ hạn mức với đang treo hẳn. Phải chạy bằng `python -u`.
+2. *Phải in ra mỗi lần chờ hạn mức.* Không in thì không có cách nào biết nó còn sống.
+3. *Đừng cắt ngắn thông báo lỗi.* Tớ cắt ở 120 ký tự nên mất đúng phần quan trọng: chạm trần nào và phải chờ bao lâu. Đã nới lên 400 ký tự.
+
+**Lỗi nghiêm trọng nhất: prompt khẳng định một điều sai sự thật.**
+
+Snapshot của S4 và S5 — đúng hai kịch bản về CPU — có trường `cpu` rỗng hoàn toàn, vì Prometheus không trả về `kube_pod_container_resource_limits`. Nhưng `describe_cpu()` vẫn in ra:
+
+```
+CPU USAGE vs LIMIT: no service is close to its CPU limit
+```
+
+Tức là nói với model rằng **đã kiểm tra CPU và không có gì bất thường**, trong khi thật ra **chưa đo được gì cả**. Mà dữ liệu CPU chính là bằng chứng quyết định để phân biệt S5 với S1: cả hai đều làm `productcatalogservice` chậm, chỉ khác ở chỗ CPU có chạm trần hay không.
+
+Đây là lớp lỗi tệ hơn hẳn thiếu dữ liệu: **prompt thiếu dữ liệu chỉ làm model bớt chắc chắn, prompt nói sai sự thật chủ động đẩy model ra khỏi đúng nguyên nhân.** Nguyên tắc rút ra và áp dụng cho cả hệ thống: mọi câu tổng kết dạng "không có gì bất thường" đều phải phân biệt được với "không đo được", nếu không thì đừng in ra.
+
+Sửa: khi `cpu` rỗng thì in thẳng `NO CPU DATA in this window - this is missing data, NOT evidence that CPU is healthy`. Còn nguyên nhân Prometheus không trả về metric thì là món nợ phải xử lý ở phase 6, cần cluster đang chạy mới chẩn đoán được.
+
+**Kết quả mốc phase 3 (prompt v3, OpenAI `gpt-4.1-mini`, 6 kịch bản × 5 lần = 30 ca):**
+
+```
+S1  root cause 100%  lan truyen 1.00  hanh dong  20%  loai loi 100%
+S2  root cause 100%  lan truyen 1.00  hanh dong 100%  loai loi 100%
+S3  root cause 100%  lan truyen 1.00  hanh dong 100%  loai loi 100%
+S4  root cause   0%  lan truyen 0.00  hanh dong  60%  loai loi   0%
+S5  root cause   0%  lan truyen 0.57  hanh dong 100%  loai loi   0%
+S6  root cause 100%  lan truyen 0.77  hanh dong 100%  loai loi 100%
+
+ROOT CAUSE ACCURACY : 66.7% (do lech chuan 0.479)
+PROPAGATION ACCURACY: 0.722 (do lech chuan 0.377)
+hanh dong dung      : 80.0%
+loai loi dung       : 66.7%
+```
+
+**Cổng chặn phase 3 đạt** (yêu cầu từ 50% trở lên). Bốn kịch bản đúng tuyệt đối với độ lệch chuẩn bằng 0; hai kịch bản CPU sai hoàn toàn, và sai **rất ổn định** — cùng một đáp án sai ở cả 5 lần. Sai ổn định là dấu hiệu lỗi hệ thống chứ không phải model dao động, nên sửa được bằng dữ liệu và prompt.
+
+Điểm đáng chú ý cho báo cáo: **hai kịch bản CPU chính là hai kịch bản có dữ liệu CPU rỗng.** Đây là bằng chứng trực tiếp cho luận điểm trung tâm của đề tài — chất lượng chẩn đoán bị chặn trên bởi chất lượng telemetry, không phải bởi năng lực suy luận của model.
+
+**Ba quy tắc thêm sau khi soi hai kịch bản sai:**
+
+1. *Một người gọi chậm về NHIỀU callee thắng một cạnh lỗi đơn lẻ.* S4 làm `frontend` nghẹt CPU, sinh ra cạnh chậm tới cả 6 callee trong khi các callee đó giữ p95 thấp. Model lại bám vào cạnh `frontend -> adservice` có 48.8% lỗi và quy tội cho `adservice`. Thật ra `adservice` lỗi vì hết hạn chờ do `frontend` đã chậm sẵn — triệu chứng, không phải nguyên nhân.
+2. *Độ trễ lan truyền lên trên y hệt tỉ lệ lỗi.* S5 có `checkoutservice` p95 625ms nên model quy tội cho nó, dù cạnh `checkoutservice -> productcatalogservice` chậm gấp 110 lần. Service nào tự chậm mà cạnh gọi ra cũng chậm thì nó đang **chuyển tiếp** độ trễ. Chỉ service ở đáy chuỗi chậm, không còn cạnh chậm nào của riêng nó, mới là nguyên nhân.
+3. *Đếm số người gọi khác nhau trước khi chọn.* S5 có 3 người gọi khác nhau cùng chậm về `productcatalogservice`, còn `checkoutservice` chỉ có 1. Bắt model đếm ra con số đó trước khi kết luận.
+
+Cả ba đều là kiến thức chung về hệ phân tán, áp dụng cho mọi kịch bản, và không hề nhắc tên service hay tên kịch bản nào.
+
+**Kết quả phase 3 sau khi sửa (prompt v4, OpenAI `gpt-4.1-mini`):**
+
+```
+                        loat 1    loat 2
+S1  root cause           100%      100%
+S2  root cause           100%      100%
+S3  root cause           100%      100%
+S4  root cause            40%       60%
+S5  root cause           100%      100%
+S6  root cause           100%      100%
+
+ROOT CAUSE ACCURACY      90.0%     93.3%
+PROPAGATION ACCURACY     0.772     0.783
+hanh dong dung           83.3%     90.0%
+loai loi dung            73.3%     76.7%
+```
+
+Từ 66.7% lên 90–93%. Chạy hai loạt độc lập để chắc con số không phải may. **Cổng chặn phase 3 đạt** với biên rộng.
+
+Thay đổi lớn nhất đến từ S5: 0% lên 100% root cause và lan truyền 1.00 tuyệt đối, nhờ quy tắc "độ trễ lan truyền lên trên y hệt tỉ lệ lỗi". S4 lên 40–60%, vẫn là kịch bản yếu nhất vì thiếu đúng dữ liệu CPU.
+
+**Phát hiện quan trọng nhất về phương pháp: thêm quy tắc vào prompt KHÔNG phải lúc nào cũng tốt lên.**
+
+Sau v4 tớ thêm hai quy tắc nữa, cả hai đều đúng về mặt kiến thức chung:
+
+1. Hỏng ở service cửa ngõ thì không service nội bộ nào bị ảnh hưởng, đường lan truyền phải rỗng.
+2. Thêm bản sao chỉ cứu được service đang quá tải; service chậm mà lưu lượng bình thường và CPU thấp thì nên `rollback` chứ không `scale_up`.
+
+Kết quả v5 **tụt xuống 66.7%**:
+
+```
+        v4      v5
+S4     40%      0%
+S5    100%      0%
+S2 hanh dong 100%  ->  40%
+TONG   90.0%   66.7%
+```
+
+Quy tắc 2 phá hỏng S2, vì ở kịch bản đó `currencyservice` bị hạ về 0 bản sao nên `scale_up` **chính là** đáp án đúng — quy tắc mới dạy model tránh đúng cái hành động cần làm. Đã quay lại v4 và giữ nguyên.
+
+Bài học đưa vào báo cáo: **các quy tắc trong prompt tương tác với nhau, không cộng dồn độc lập.** Một quy tắc đúng trong đa số trường hợp vẫn có thể phá một trường hợp mà nó không áp dụng. Vì vậy mọi thay đổi prompt đều phải đo lại trên toàn bộ bộ kịch bản, không được đo mỗi kịch bản đang sửa. Đây chính là lý do `eval/replay.py` chạy trên snapshot đã lưu: nếu mỗi lần đo phải tiêm lỗi lại thì không ai đủ kiên nhẫn đo lại cả bộ sau mỗi lần sửa một dòng prompt.
+
+**Cảnh báo phải viết vào báo cáo: con số 90–93% có rủi ro overfitting** (khớp quá sát dữ liệu đã thấy). Tớ đã tinh chỉnh prompt bằng cách soi chính 6 ca này rồi thêm quy tắc, nên model được lợi thế mà nó sẽ không có với sự cố chưa từng gặp. Cách xử lý trung thực: phase 6 tiêm lỗi lại từ đầu sinh ra snapshot mới, và **con số của phase 6 mới là con số dùng để kết luận**. Con số phase 3 chỉ nói lên rằng phương pháp có cơ sở để đi tiếp.
+
+Điều làm nhẹ bớt lo ngại này: cả bảy quy tắc thêm vào đều là kiến thức chung về hệ phân tán, không quy tắc nào nhắc tên service hay tên kịch bản. Nhưng nói vậy không thay thế được việc đo trên dữ liệu mới.
+
+**Lỗi thứ bảy, nằm ở ĐÁP ÁN chứ không ở model.** `expected_propagation` của F4-frontend là danh sách rỗng, vì hàm sinh đáp án đi ngược lên tìm những service *gọi* service hỏng, mà `frontend` là cửa ngõ vào nên không service nội bộ nào gọi nó. Model liệt kê 6 callee nên Jaccard bằng 0 ở cả 5 lần. Ở đây model sai thật — các callee đó vẫn khỏe, chính `frontend` mới nghẹt — nhưng quy tắc dạy nó trả về danh sách rỗng lại nằm trong gói v5 đã bị loại vì làm tổng thể tệ đi. Đây là món nợ phase 6: tách hai quy tắc của v5 ra thử riêng từng cái, thay vì thêm cả gói.
+
 ### Phase 4 — Digital Twin
 
 ### Phase 5 — ReAct loop

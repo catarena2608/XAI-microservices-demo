@@ -96,7 +96,7 @@ Chậm hơn nhưng **chắc chắn chạy được với 15.3GB RAM**. Đừng t
 | Không làm | Lý do |
 |---|---|
 | **Huấn luyện GNN** | Cần vài nghìn ca lỗi có nhãn. Chaos cả kỳ chỉ ra được vài trăm ca → model tệ → phải bào chữa trong báo cáo. Graph chỉ dùng để **mô tả bằng text rồi nhồi cho LLM đọc**. |
-| **Chạy LLM nội bộ trên GPU 4050** | 6GB VRAM chỉ vừa model 7–8B đã lượng tử hóa. Loại đó suy luận nhiều bước và xuất JSON đúng schema rất kém → làm hỏng đúng phần cốt lõi. **Dùng API trả tiền.** |
+| **Chạy LLM nội bộ trên GPU 4050** | 6GB VRAM chỉ vừa model 7–8B đã lượng tử hóa. Loại đó suy luận nhiều bước và xuất JSON đúng schema rất kém → làm hỏng đúng phần cốt lõi. **Dùng API.** Quyết định cụ thể ở phase 3: hai tầng — Groq gói miễn phí (`openai/gpt-oss-120b`, model mở 120 tỉ tham số) cho chạy loạt, OpenAI cho demo và bảng so sánh cuối. Model 120B không rơi vào cái bẫy 7–8B nói trên, và chạy cả hai tầng cho luôn một bảng so sánh model rẻ với model mạnh. |
 | **Tự viết hệ thống microservices** | Đốt 4–6 tuần vào phần không được tính điểm. Tệ hơn: lỗi do chính mình thiết kế → hội đồng phản biện "tự ra đề tự giải". |
 | **train-ticket / robot-shop** | Đã loại. train-ticket: 40+ service, quá nặng RAM, tracing không đầy đủ. robot-shop: tốt hơn nhưng phải tự cắm OpenTelemetry cho nhiều ngôn ngữ. |
 | **Chaos Mesh** | Quá nặng cho nhu cầu. Dùng 4 cách tiêm lỗi thủ công ở mục 6. |

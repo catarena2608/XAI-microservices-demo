@@ -45,6 +45,7 @@ class SystemSnapshot:
     topology: LogicalTopology | None = None
     span_count: int = 0
     edge_sources: dict = field(default_factory=dict)
+    cpu: dict = field(default_factory=dict)
 
     # ------------------------------------------------------------------
 
@@ -54,14 +55,23 @@ class SystemSnapshot:
         Thứ tự có chủ đích: phần lệch đặt lên đầu vì model chú ý phần đầu nhiều nhất,
         mà đó cũng là manh mối mạnh nhất.
         """
+        # Service dang bi nghi la cham -> in kem CPU cua chung du chua cham tran.
+        slow = {f.source for f in self.diff.slow_edges}
+        slow |= {f.target for f in self.diff.slow_edges}
         parts = [
             serialize.describe_diff(self.diff),
             "",
             serialize.describe_red_metrics(self.red),
             "",
+            serialize.describe_cpu(self.cpu, slow),
+            "",
             serialize.describe_runtime_graph(self.runtime_graph),
             "",
-            serialize.describe_pods(self.pods),
+            serialize.describe_pods(
+                self.pods,
+                expected=(serialize.expected_deployments(self.topology)
+                          if self.topology is not None else None),
+            ),
             "",
             serialize.describe_resources(self.resources),
         ]
@@ -93,6 +103,7 @@ class SystemSnapshot:
             "diff": self.diff.to_dict(),
             "red": {k: v.to_dict() for k, v in self.red.items()},
             "resources": {k: v.to_dict() for k, v in self.resources.items()},
+            "cpu": self.cpu,
             "pods": [p.to_dict() for p in self.pods],
         }
 
@@ -143,4 +154,5 @@ def take_snapshot(
         topology=topo,
         span_count=len(spans),
         edge_sources=edge_source_summary(graph),
+        cpu=prom.cpu_vs_limit(namespace),
     )

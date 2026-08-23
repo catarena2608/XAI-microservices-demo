@@ -1,0 +1,2029 @@
+{
+  "provider": "openai",
+  "model": "gpt-4.1-mini",
+  "runs_per_scenario": 5,
+  "overall": {
+    "n": 30,
+    "root_cause_accuracy": 0.6667,
+    "root_cause_std": 0.4795,
+    "propagation_mean": 0.7111,
+    "propagation_std": 0.3938,
+    "action_accuracy": 0.6333,
+    "fault_type_accuracy": 0.6667,
+    "mean_confidence": 0.945
+  },
+  "per_scenario": {
+    "S1": {
+      "n": 5,
+      "root_cause_accuracy": 1.0,
+      "root_cause_std": 0.0,
+      "propagation_mean": 0.9333,
+      "propagation_std": 0.1491,
+      "action_accuracy": 1.0,
+      "fault_type_accuracy": 1.0,
+      "mean_confidence": 0.94
+    },
+    "S2": {
+      "n": 5,
+      "root_cause_accuracy": 1.0,
+      "root_cause_std": 0.0,
+      "propagation_mean": 1.0,
+      "propagation_std": 0.0,
+      "action_accuracy": 0.4,
+      "fault_type_accuracy": 1.0,
+      "mean_confidence": 0.98
+    },
+    "S3": {
+      "n": 5,
+      "root_cause_accuracy": 1.0,
+      "root_cause_std": 0.0,
+      "propagation_mean": 1.0,
+      "propagation_std": 0.0,
+      "action_accuracy": 1.0,
+      "fault_type_accuracy": 1.0,
+      "mean_confidence": 0.9
+    },
+    "S4": {
+      "n": 5,
+      "root_cause_accuracy": 0.0,
+      "root_cause_std": 0.0,
+      "propagation_mean": 0.0,
+      "propagation_std": 0.0,
+      "action_accuracy": 0.0,
+      "fault_type_accuracy": 0.0,
+      "mean_confidence": 0.95
+    },
+    "S5": {
+      "n": 5,
+      "root_cause_accuracy": 0.0,
+      "root_cause_std": 0.0,
+      "propagation_mean": 0.4333,
+      "propagation_std": 0.0913,
+      "action_accuracy": 0.8,
+      "fault_type_accuracy": 0.0,
+      "mean_confidence": 0.9
+    },
+    "S6": {
+      "n": 5,
+      "root_cause_accuracy": 1.0,
+      "root_cause_std": 0.0,
+      "propagation_mean": 0.9,
+      "propagation_std": 0.2236,
+      "action_accuracy": 0.6,
+      "fault_type_accuracy": 1.0,
+      "mean_confidence": 1.0
+    }
+  },
+  "records": [
+    {
+      "scenario": "S1",
+      "run": 1,
+      "ok": true,
+      "score": {
+        "scenario": "S1",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": true,
+        "confidence": 0.95,
+        "fault_type_correct": true,
+        "predicted_root": "productcatalogservice",
+        "expected_root": "productcatalogservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "productcatalogservice",
+          "fault_type": "latency",
+          "confidence": 0.95,
+          "reasoning_chain": [
+            "Multiple callers (frontend and recommendationservice) show very high latency calling productcatalogservice, with p95 around 9750ms and call latencies around 6000ms.",
+            "productcatalogservice's own p95 latency is very high at 9750ms, indicating it is slow while processing requests, not just queuing.",
+            "checkoutservice calls to productcatalogservice are also very slow (6002.58ms), confirming productcatalogservice is slow for multiple independent callers.",
+            "frontend calls to checkoutservice are slow (6020.67ms) but checkoutservice itself has zero request rate and high p95, indicating it is affected downstream by productcatalogservice slowness.",
+            "currencyservice shows no errors and very low latency, and calls from checkoutservice to currencyservice are missing, so currencyservice is not the root cause.",
+            "No CPU data is available, but the high latency and multiple slow callers converging on productcatalogservice strongly indicate productcatalogservice is the root cause of latency.",
+            "productcatalogservice pod was recreated 366s ago, but this is not recent enough to explain the current high latency, so no pod_kill action is needed."
+          ],
+          "propagation_path": [
+            "checkoutservice",
+            "frontend",
+            "recommendationservice"
+          ],
+          "evidence": [
+            "frontend -> productcatalogservice: avg 6001.19ms, p95 productcatalogservice 9750.0ms",
+            "recommendationservice -> productcatalogservice: avg 6002.4ms, p95 productcatalogservice 9750.0ms",
+            "checkoutservice -> productcatalogservice: avg 6002.58ms",
+            "frontend -> checkoutservice: avg 6020.67ms, checkoutservice p95 9750.0ms",
+            "currencyservice p95 0.47ms, no errors, calls missing from checkoutservice",
+            "productcatalogservice pod was recreated 366s ago"
+          ],
+          "proposed_actions": [
+            {
+              "action": "rollback",
+              "target": "productcatalogservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "High latency in productcatalogservice likely caused by recent deployment or configuration change; rollback to previous stable version to restore performance."
+            },
+            {
+              "action": "restart_pod",
+              "target": "productcatalogservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "Restarting productcatalogservice pod may clear transient issues causing high latency."
+            },
+            {
+              "action": "scale_up",
+              "target": "productcatalogservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "If latency is due to resource saturation, scaling up productcatalogservice could reduce request processing time."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3860,
+        "output_tokens": 637,
+        "latency_s": 10.99,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S1",
+      "run": 2,
+      "ok": true,
+      "score": {
+        "scenario": "S1",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": true,
+        "confidence": 0.95,
+        "fault_type_correct": true,
+        "predicted_root": "productcatalogservice",
+        "expected_root": "productcatalogservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "productcatalogservice",
+          "fault_type": "latency",
+          "confidence": 0.95,
+          "reasoning_chain": [
+            "Multiple slow edges converge on productcatalogservice: checkoutservice->productcatalogservice, frontend->productcatalogservice, and recommendationservice->productcatalogservice all show very high latency.",
+            "productcatalogservice's own p95 latency is very high at 9750.0ms, confirming it is slow while processing requests.",
+            "checkoutservice->currencyservice calls are missing, but currencyservice itself is fast with 0.47ms p95 and no errors, so currencyservice is not the root cause.",
+            "frontend->checkoutservice is slow, but checkoutservice's own p95 is also high at 9750.0ms, likely due to its slow call to productcatalogservice.",
+            "recommendationservice->productcatalogservice is slow, and recommendationservice's own p95 is also high, indicating it is relaying productcatalogservice's delay.",
+            "productcatalogservice pod was recreated 366s ago, but it is currently running and ready, so no pod_kill or crash is indicated.",
+            "No CPU data is available, so resource exhaustion cannot be ruled out, but the high latency and multiple callers affected point to productcatalogservice as the root cause.",
+            "Propagation path includes checkoutservice, frontend, and recommendationservice as they are affected by productcatalogservice's slowness."
+          ],
+          "propagation_path": [
+            "checkoutservice",
+            "frontend",
+            "recommendationservice"
+          ],
+          "evidence": [
+            "checkoutservice->productcatalogservice: avg 6002.58ms, healthy 0.83ms",
+            "frontend->productcatalogservice: avg 6001.19ms, healthy 1.24ms",
+            "recommendationservice->productcatalogservice: avg 6002.4ms, healthy 2.08ms",
+            "productcatalogservice p95 latency: 9750.0ms",
+            "currencyservice p95 latency: 0.47ms, 0.0% errors",
+            "frontend->checkoutservice: avg 6020.67ms, healthy 84.62ms",
+            "checkoutservice p95 latency: 9750.0ms",
+            "productcatalogservice pod was recreated 366s ago and is currently running and ready"
+          ],
+          "proposed_actions": [
+            {
+              "action": "restart_pod",
+              "target": "productcatalogservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "Restarting the productcatalogservice pod may clear any transient issues causing high latency."
+            },
+            {
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "If resource exhaustion is suspected, increasing CPU or memory limits may help reduce latency."
+            },
+            {
+              "action": "scale_up",
+              "target": "productcatalogservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "Scaling up replicas can help if the service is saturated, though CPU data is missing to confirm this."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3860,
+        "output_tokens": 687,
+        "latency_s": 10.94,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S1",
+      "run": 3,
+      "ok": true,
+      "score": {
+        "scenario": "S1",
+        "root_cause_correct": true,
+        "propagation_jaccard": 0.6667,
+        "action_correct": true,
+        "confidence": 0.95,
+        "fault_type_correct": true,
+        "predicted_root": "productcatalogservice",
+        "expected_root": "productcatalogservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "productcatalogservice",
+          "fault_type": "latency",
+          "confidence": 0.95,
+          "reasoning_chain": [
+            "Multiple callers (frontend and recommendationservice) show very high latency calling productcatalogservice, indicating productcatalogservice is slow.",
+            "productcatalogservice's own p95 latency is very high at 9750.0ms, confirming it is slow while processing requests.",
+            "checkoutservice->currencyservice calls are missing but currencyservice is fast and error-free, so currencyservice is not the root cause.",
+            "frontend->checkoutservice and frontend->productcatalogservice calls are slow, but productcatalogservice is the common slow callee for multiple callers, outranking checkoutservice.",
+            "checkoutservice shows zero request rate and high latency, likely due to low traffic and dependency on productcatalogservice, so it is a victim, not root cause.",
+            "productcatalogservice pod was recreated 366s ago, indicating a recent change but it is currently running and ready, so no pod_kill or crash fault type.",
+            "No CPU data is available, but the very high latency and multiple slow callers strongly indicate a latency fault in productcatalogservice rather than resource exhaustion.",
+            "Propagation path includes frontend and recommendationservice, which both experience high latency due to productcatalogservice's slowness."
+          ],
+          "propagation_path": [
+            "frontend",
+            "recommendationservice"
+          ],
+          "evidence": [
+            "checkoutservice -> productcatalogservice: avg 6002.58ms vs healthy 0.83ms",
+            "frontend -> productcatalogservice: avg 6001.19ms vs healthy 1.24ms",
+            "recommendationservice -> productcatalogservice: avg 6002.4ms vs healthy 2.08ms",
+            "productcatalogservice p95 latency 9750.0ms",
+            "frontend -> checkoutservice avg 6020.67ms vs healthy 84.62ms",
+            "checkoutservice -> currencyservice calls missing but currencyservice p95 0.47ms and 0.0% errors",
+            "productcatalogservice pod was RECREATED 366s ago and is currently ready"
+          ],
+          "proposed_actions": [
+            {
+              "action": "rollback",
+              "target": "productcatalogservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "Recent pod recreation and very high latency suggest a recent deployment caused the issue; rollback to previous version to restore performance."
+            },
+            {
+              "action": "restart_pod",
+              "target": "productcatalogservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "Restarting the pod may clear transient issues causing high latency if rollback is not immediately possible."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3860,
+        "output_tokens": 502,
+        "latency_s": 5.36,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S1",
+      "run": 4,
+      "ok": true,
+      "score": {
+        "scenario": "S1",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": true,
+        "confidence": 0.95,
+        "fault_type_correct": true,
+        "predicted_root": "productcatalogservice",
+        "expected_root": "productcatalogservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "productcatalogservice",
+          "fault_type": "latency",
+          "confidence": 0.95,
+          "reasoning_chain": [
+            "Multiple slow edges converge on productcatalogservice: checkoutservice->productcatalogservice, frontend->productcatalogservice, and recommendationservice->productcatalogservice all show very high latency.",
+            "productcatalogservice's own p95 latency is very high at 9750.0ms, confirming it is slow while processing requests.",
+            "checkoutservice->currencyservice calls are missing, but currencyservice itself is fast with 0.47ms p95 and no errors, so currencyservice is not the root cause.",
+            "frontend->checkoutservice is slow, but checkoutservice's own p95 is high due to slow calls to productcatalogservice, indicating latency propagation from productcatalogservice.",
+            "No CPU data is available, but the high latency and multiple callers affected indicate a service processing delay rather than resource exhaustion.",
+            "productcatalogservice pod was recreated 366s ago, so it is stable now and not a pod_kill or crash.",
+            "The propagation path includes checkoutservice, frontend, and recommendationservice, all affected by productcatalogservice's slowness."
+          ],
+          "propagation_path": [
+            "checkoutservice",
+            "frontend",
+            "recommendationservice"
+          ],
+          "evidence": [
+            "checkoutservice->productcatalogservice: avg 6002.58ms, p95 9750.0ms",
+            "frontend->productcatalogservice: avg 6001.19ms, p95 9750.0ms",
+            "recommendationservice->productcatalogservice: avg 6002.4ms, p95 9750.0ms",
+            "productcatalogservice p95 latency 9750.0ms",
+            "frontend->checkoutservice: avg 6020.67ms, p95 9750.0ms",
+            "checkoutservice->currencyservice calls missing but currencyservice p95 0.47ms and 0.0% errors"
+          ],
+          "proposed_actions": [
+            {
+              "action": "restart_pod",
+              "target": "productcatalogservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "Restarting productcatalogservice may clear the latency issue caused by a recent pod recreation or internal state."
+            },
+            {
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "If resource limits are too low, adjusting them may reduce latency."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3860,
+        "output_tokens": 558,
+        "latency_s": 6.24,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S1",
+      "run": 5,
+      "ok": true,
+      "score": {
+        "scenario": "S1",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": true,
+        "confidence": 0.9,
+        "fault_type_correct": true,
+        "predicted_root": "productcatalogservice",
+        "expected_root": "productcatalogservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "productcatalogservice",
+          "fault_type": "latency",
+          "confidence": 0.9,
+          "reasoning_chain": [
+            "Multiple slow edges converge on productcatalogservice from checkoutservice, frontend, and recommendationservice, indicating productcatalogservice is the root cause.",
+            "productcatalogservice shows very high server-side p95 latency of 9750.0ms, confirming it is slow while processing requests.",
+            "checkoutservice->currencyservice calls are missing, but currencyservice itself is fast with 0.47ms p95 and no errors, so currencyservice is not the cause.",
+            "frontend->checkoutservice and frontend->productcatalogservice calls are slow, but checkoutservice has zero request rate, indicating it is downstream affected, not root cause.",
+            "recommendationservice->productcatalogservice is also slow, confirming productcatalogservice is slow for multiple independent callers.",
+            "productcatalogservice pod was recreated 366s ago, so this is not a pod_kill or crash scenario.",
+            "No CPU data is available, but the very high latency and multiple slow callers strongly indicate a latency fault in productcatalogservice.",
+            "Propagation path includes checkoutservice, frontend, and recommendationservice as they are affected by productcatalogservice's slowness."
+          ],
+          "propagation_path": [
+            "checkoutservice",
+            "frontend",
+            "recommendationservice"
+          ],
+          "evidence": [
+            "checkoutservice->productcatalogservice: avg 6002.58ms, p95 9750.0ms",
+            "frontend->productcatalogservice: avg 6001.19ms, p95 9750.0ms",
+            "recommendationservice->productcatalogservice: avg 6002.4ms, p95 9750.0ms",
+            "productcatalogservice p95 latency 9750.0ms",
+            "frontend->checkoutservice avg 6020.67ms, p95 9750.0ms",
+            "checkoutservice->currencyservice calls missing but currencyservice p95 0.47ms, 0.0% errors"
+          ],
+          "proposed_actions": [
+            {
+              "action": "restart_pod",
+              "target": "productcatalogservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "Restarting productcatalogservice pod may clear the latency issue caused by recent pod recreation and high processing latency."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3860,
+        "output_tokens": 442,
+        "latency_s": 5.13,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S2",
+      "run": 1,
+      "ok": true,
+      "score": {
+        "scenario": "S2",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": false,
+        "confidence": 1.0,
+        "fault_type_correct": true,
+        "predicted_root": "currencyservice",
+        "expected_root": "currencyservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "currencyservice",
+          "fault_type": "crash",
+          "confidence": 1.0,
+          "reasoning_chain": [
+            "Multiple callers (frontend and checkoutservice) show high error rates calling currencyservice (26.5% and 58.8% respectively).",
+            "frontend also shows 58.8% errors calling checkoutservice, which itself shows 65.4% errors, indicating error propagation from currencyservice through checkoutservice to frontend.",
+            "currencyservice has no pods at all, confirming it is down and causing the errors.",
+            "Other services on the critical path have low error rates and low latency, so they are not root cause.",
+            "Therefore, currencyservice is the root cause with a crash fault type, propagating errors to checkoutservice and frontend."
+          ],
+          "propagation_path": [
+            "checkoutservice",
+            "frontend"
+          ],
+          "evidence": [
+            "checkoutservice -> currencyservice: ti le loi 58.8% (10/17 lan goi)",
+            "frontend -> checkoutservice: ti le loi 58.8% (10/17 lan goi)",
+            "frontend -> currencyservice: ti le loi 26.5% (52/196 lan goi)",
+            "currencyservice: NO PODS AT ALL - deployment scaled to 0 or every pod is gone",
+            "checkoutservice: 65.4% errors, p95 46.25ms",
+            "frontend: 48.0% errors, p95 56.97ms",
+            "productcatalogservice: 0.0% errors, p95 0.48ms"
+          ],
+          "proposed_actions": [
+            {
+              "action": "restart_pod",
+              "target": "currencyservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "currencyservice has no pods running, so restarting or redeploying it will restore service availability and fix the crash fault."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3737,
+        "output_tokens": 357,
+        "latency_s": 4.74,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S2",
+      "run": 2,
+      "ok": true,
+      "score": {
+        "scenario": "S2",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": false,
+        "confidence": 1.0,
+        "fault_type_correct": true,
+        "predicted_root": "currencyservice",
+        "expected_root": "currencyservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "currencyservice",
+          "fault_type": "crash",
+          "confidence": 1.0,
+          "reasoning_chain": [
+            "checkoutservice->currencyservice and frontend->currencyservice both show high error rates (58.8% and 26.5% respectively), indicating a problem with currencyservice.",
+            "frontend->checkoutservice also shows 58.8% errors, matching checkoutservice->currencyservice error rate, so errors propagate upstream from currencyservice through checkoutservice to frontend.",
+            "currencyservice has NO PODS AT ALL, confirming it is down or scaled to zero, which explains the 0.0% server-side errors but high caller-side errors.",
+            "Other services on the critical path (productcatalogservice, cartservice, paymentservice) show no errors and low latency, so they are not root cause.",
+            "Therefore, currencyservice is the root cause with a crash fault type due to no pods available."
+          ],
+          "propagation_path": [
+            "checkoutservice",
+            "frontend"
+          ],
+          "evidence": [
+            "checkoutservice->currencyservice: 58.8% errors (10/17 calls)",
+            "frontend->checkoutservice: 58.8% errors (10/17 calls)",
+            "frontend->currencyservice: 26.5% errors (52/196 calls)",
+            "currencyservice: NO PODS AT ALL",
+            "checkoutservice: 65.4% errors, p95 46.25ms",
+            "frontend: 48.0% errors, p95 56.97ms",
+            "productcatalogservice: 0.0% errors, p95 0.48ms",
+            "cartservice: 0.0% errors, p95 4.49ms",
+            "paymentservice: 0.0% errors, p95 1.55ms"
+          ],
+          "proposed_actions": [
+            {
+              "action": "no_action",
+              "target": "currencyservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "currencyservice pods are missing, likely scaled down or crashed; Kubernetes will recover by recreating pods automatically."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3737,
+        "output_tokens": 396,
+        "latency_s": 4.57,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S2",
+      "run": 3,
+      "ok": true,
+      "score": {
+        "scenario": "S2",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": true,
+        "confidence": 0.95,
+        "fault_type_correct": true,
+        "predicted_root": "currencyservice",
+        "expected_root": "currencyservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "currencyservice",
+          "fault_type": "crash",
+          "confidence": 0.95,
+          "reasoning_chain": [
+            "Multiple failing edges converge on currencyservice: checkoutservice->currencyservice (58.8% errors) and frontend->currencyservice (26.5% errors).",
+            "frontend->checkoutservice also shows 58.8% errors, but checkoutservice calls currencyservice, so this is downstream propagation, not a separate fault.",
+            "currencyservice has NO PODS AT ALL, indicating it is completely down, confirming a crash fault type.",
+            "Other services on the critical path have low error rates and low latency, so they are victims, not root causes."
+          ],
+          "propagation_path": [
+            "checkoutservice",
+            "frontend"
+          ],
+          "evidence": [
+            "checkoutservice -> currencyservice: 58.8% errors (10/17 calls)",
+            "frontend -> checkoutservice: 58.8% errors (10/17 calls)",
+            "frontend -> currencyservice: 26.5% errors (52/196 calls)",
+            "currencyservice: NO PODS AT ALL",
+            "checkoutservice: 65.4% errors, p95 46.25ms",
+            "frontend: 48.0% errors, p95 56.97ms"
+          ],
+          "proposed_actions": [
+            {
+              "action": "scale_up",
+              "target": "currencyservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "currencyservice has no pods running, so scaling up will restore its availability and fix the crash."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3737,
+        "output_tokens": 294,
+        "latency_s": 3.73,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S2",
+      "run": 4,
+      "ok": true,
+      "score": {
+        "scenario": "S2",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": false,
+        "confidence": 0.95,
+        "fault_type_correct": true,
+        "predicted_root": "currencyservice",
+        "expected_root": "currencyservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "currencyservice",
+          "fault_type": "crash",
+          "confidence": 0.95,
+          "reasoning_chain": [
+            "checkoutservice -> currencyservice and frontend -> currencyservice both show high error rates (58.8% and 26.5% respectively).",
+            "frontend -> checkoutservice also shows 58.8% errors, matching checkoutservice -> currencyservice error rate, indicating error propagation.",
+            "currencyservice has NO PODS AT ALL, confirming it is down and the root cause of errors.",
+            "currencyservice's own p95 latency is low (0.48ms) and 0.0% errors, consistent with no server-side metrics due to crash.",
+            "Other services on the critical path have low error rates and latencies, confirming currencyservice is the single root cause.",
+            "Propagation path includes checkoutservice and frontend, which are affected by currencyservice's failure."
+          ],
+          "propagation_path": [
+            "checkoutservice",
+            "frontend"
+          ],
+          "evidence": [
+            "checkoutservice -> currencyservice: 58.8% errors (10/17 calls)",
+            "frontend -> checkoutservice: 58.8% errors (10/17 calls)",
+            "frontend -> currencyservice: 26.5% errors (52/196 calls)",
+            "currencyservice: NO PODS AT ALL",
+            "currencyservice p95 latency 0.48ms with 0.0% errors",
+            "checkoutservice p95 latency 46.25ms with 65.4% errors",
+            "frontend p95 latency 56.97ms with 48.0% errors"
+          ],
+          "proposed_actions": [
+            {
+              "action": "restart_pod",
+              "target": "currencyservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "currencyservice has no pods running, indicating a crash; restarting pods will restore service availability."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3737,
+        "output_tokens": 352,
+        "latency_s": 5.8,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S2",
+      "run": 5,
+      "ok": true,
+      "score": {
+        "scenario": "S2",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": true,
+        "confidence": 1.0,
+        "fault_type_correct": true,
+        "predicted_root": "currencyservice",
+        "expected_root": "currencyservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "currencyservice",
+          "fault_type": "crash",
+          "confidence": 1.0,
+          "reasoning_chain": [
+            "checkoutservice->currencyservice and frontend->currencyservice both show high error rates, indicating a problem with currencyservice.",
+            "frontend->checkoutservice also shows the same high error rate, which is downstream propagation of currencyservice's failure.",
+            "currencyservice has NO PODS AT ALL, confirming it is down and the root cause of the errors.",
+            "Other services have low error rates and normal latencies, so they are victims, not causes.",
+            "The critical business path is affected through checkoutservice and frontend, confirming the impact propagation."
+          ],
+          "propagation_path": [
+            "checkoutservice",
+            "frontend"
+          ],
+          "evidence": [
+            "checkoutservice->currencyservice: 58.8% errors (10/17 calls)",
+            "frontend->checkoutservice: 58.8% errors (10/17 calls)",
+            "frontend->currencyservice: 26.5% errors (52/196 calls)",
+            "currencyservice: NO PODS AT ALL",
+            "checkoutservice: 65.4% errors, p95 46.25ms",
+            "frontend: 48.0% errors, p95 56.97ms"
+          ],
+          "proposed_actions": [
+            {
+              "action": "scale_up",
+              "target": "currencyservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "currencyservice has no pods running, scaling up will restore service availability."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3737,
+        "output_tokens": 281,
+        "latency_s": 3.87,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S3",
+      "run": 1,
+      "ok": true,
+      "score": {
+        "scenario": "S3",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": true,
+        "confidence": 0.9,
+        "fault_type_correct": true,
+        "predicted_root": "checkoutservice",
+        "expected_root": "checkoutservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "checkoutservice",
+          "fault_type": "pod_kill",
+          "confidence": 0.9,
+          "reasoning_chain": [
+            "frontend->checkoutservice calls are slow with p95 96.52ms, much higher than normal 20.53ms, indicating checkoutservice is slow or delayed.",
+            "checkoutservice's own p95 latency is 43.8ms, which is high, showing it is slow processing requests, not just queuing.",
+            "checkoutservice was recently RECREATED 156 seconds ago, indicating a pod restart event, consistent with pod_kill fault type.",
+            "All outbound calls from checkoutservice to its dependencies have low latency and zero errors, so checkoutservice is the root cause, not its dependencies.",
+            "No CPU data is available, but the recent pod recreation and latency pattern point to pod_kill rather than resource exhaustion.",
+            "No other services show slow or error edges converging on them, so checkoutservice is the single root cause."
+          ],
+          "propagation_path": [
+            "frontend"
+          ],
+          "evidence": [
+            "frontend->checkoutservice latency p95 96.52ms vs healthy 20.53ms",
+            "checkoutservice own p95 latency 43.8ms",
+            "checkoutservice pod was RECREATED 156s ago",
+            "checkoutservice outbound calls have low latency and 0.0% errors",
+            "frontend own p95 latency 79.59ms, slightly elevated but less than checkoutservice"
+          ],
+          "proposed_actions": [
+            {
+              "action": "no_action",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "checkoutservice pod was recently recreated and is now running and ready, so the system is recovering on its own."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3678,
+        "output_tokens": 330,
+        "latency_s": 4.6,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S3",
+      "run": 2,
+      "ok": true,
+      "score": {
+        "scenario": "S3",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": true,
+        "confidence": 0.9,
+        "fault_type_correct": true,
+        "predicted_root": "checkoutservice",
+        "expected_root": "checkoutservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "checkoutservice",
+          "fault_type": "pod_kill",
+          "confidence": 0.9,
+          "reasoning_chain": [
+            "frontend->checkoutservice calls are slow with p95 96.52ms, much higher than normal 20.53ms, indicating checkoutservice is slow or delayed.",
+            "checkoutservice's own p95 latency is 43.8ms, which is high, showing it is slow processing requests, not just queuing.",
+            "checkoutservice was recently RECREATED 156 seconds ago, indicating a pod restart event, consistent with pod_kill fault type.",
+            "All outbound calls from checkoutservice to its dependencies have low latency and zero errors, so checkoutservice is the root cause, not its dependencies.",
+            "No CPU data is available, but the recent pod recreation and latency pattern point to pod_kill rather than resource exhaustion.",
+            "No other services show slow or error edges converging on them, so checkoutservice is the single root cause."
+          ],
+          "propagation_path": [
+            "frontend"
+          ],
+          "evidence": [
+            "frontend->checkoutservice p95 latency 96.52ms vs healthy 20.53ms",
+            "checkoutservice own p95 latency 43.8ms is high",
+            "checkoutservice pod was RECREATED 156s ago",
+            "checkoutservice outbound calls have low latency and zero errors",
+            "frontend own p95 latency 79.59ms is elevated, likely due to slow checkoutservice"
+          ],
+          "proposed_actions": [
+            {
+              "action": "no_action",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "checkoutservice pod was recently recreated and is now running and ready, so the system is recovering on its own."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3678,
+        "output_tokens": 329,
+        "latency_s": 3.88,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S3",
+      "run": 3,
+      "ok": true,
+      "score": {
+        "scenario": "S3",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": true,
+        "confidence": 0.9,
+        "fault_type_correct": true,
+        "predicted_root": "checkoutservice",
+        "expected_root": "checkoutservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "checkoutservice",
+          "fault_type": "pod_kill",
+          "confidence": 0.9,
+          "reasoning_chain": [
+            "frontend->checkoutservice calls are slow with p95 96.52ms, much higher than normal 20.53ms, indicating checkoutservice is slow or recovering.",
+            "checkoutservice's own p95 latency is 43.8ms, elevated but less than caller-observed latency, indicating checkoutservice is slow processing requests.",
+            "checkoutservice pod was recreated 156 seconds ago, indicating a recent pod kill and restart event.",
+            "No other services show slow latency or errors, and checkoutservice's downstream calls are fast and error-free, so the fault is local to checkoutservice.",
+            "The slow latency is due to pod restart recovery, not resource exhaustion or downstream dependency failure."
+          ],
+          "propagation_path": [
+            "frontend"
+          ],
+          "evidence": [
+            "frontend->checkoutservice latency p95 96.52ms vs healthy 20.53ms",
+            "checkoutservice own p95 latency 43.8ms",
+            "checkoutservice pod was recreated 156s ago",
+            "checkoutservice downstream calls have low latency and 0% errors",
+            "no CPU usage data available but pod recreation indicates pod_kill fault type"
+          ],
+          "proposed_actions": [
+            {
+              "action": "no_action",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "checkoutservice pod was recently recreated and is recovering; no intervention needed"
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3678,
+        "output_tokens": 281,
+        "latency_s": 3.63,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S3",
+      "run": 4,
+      "ok": true,
+      "score": {
+        "scenario": "S3",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": true,
+        "confidence": 0.9,
+        "fault_type_correct": true,
+        "predicted_root": "checkoutservice",
+        "expected_root": "checkoutservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "checkoutservice",
+          "fault_type": "pod_kill",
+          "confidence": 0.9,
+          "reasoning_chain": [
+            "frontend->checkoutservice calls are slow with p95 96.52ms, much higher than normal 20.53ms, indicating checkoutservice is slow or delayed.",
+            "checkoutservice's own p95 latency is 43.8ms, which is elevated but less than caller-observed latency, suggesting some queuing or startup delay.",
+            "checkoutservice pod was recreated 156 seconds ago, indicating a recent pod restart likely causing transient slowness.",
+            "All outbound calls from checkoutservice have low latency and zero errors, so checkoutservice is not slow due to downstream dependencies.",
+            "No CPU data is available, but the pod recreation is a stronger signal than resource exhaustion here.",
+            "No errors or failures on checkoutservice or its downstream services, so no crash or dependency failure is indicated."
+          ],
+          "propagation_path": [
+            "frontend"
+          ],
+          "evidence": [
+            "frontend->checkoutservice p95 latency 96.52ms vs healthy 20.53ms",
+            "checkoutservice own p95 latency 43.8ms",
+            "checkoutservice pod was recreated 156s ago",
+            "checkoutservice outbound calls have low latency and zero errors",
+            "frontend p95 latency elevated at 79.59ms, likely due to checkoutservice slowness"
+          ],
+          "proposed_actions": [
+            {
+              "action": "no_action",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "checkoutservice pod was recently recreated and is now running and ready; system is recovering on its own."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3678,
+        "output_tokens": 313,
+        "latency_s": 6.13,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S3",
+      "run": 5,
+      "ok": true,
+      "score": {
+        "scenario": "S3",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": true,
+        "confidence": 0.9,
+        "fault_type_correct": true,
+        "predicted_root": "checkoutservice",
+        "expected_root": "checkoutservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "checkoutservice",
+          "fault_type": "pod_kill",
+          "confidence": 0.9,
+          "reasoning_chain": [
+            "frontend->checkoutservice calls are slow with average 96.52ms vs healthy 20.53ms, indicating checkoutservice is slow or delayed.",
+            "checkoutservice's own p95 latency is 43.8ms, which is high compared to its callees' latencies (all under 3ms), so checkoutservice is slow processing requests, not just queuing.",
+            "checkoutservice was RECREATED 156 seconds ago, indicating a recent pod restart, consistent with pod_kill fault type.",
+            "No errors are reported on checkoutservice or its outbound calls, so no dependency failure is indicated.",
+            "Other services on the critical path (productcatalogservice, cartservice, paymentservice) have low latency and zero errors, so they are not root cause.",
+            "The slow calls converge on checkoutservice from frontend only, and no other callers show slow edges to checkoutservice, so checkoutservice is the root cause.",
+            "Propagation path includes frontend, which observes the slow calls to checkoutservice, but no other services are affected downstream."
+          ],
+          "propagation_path": [
+            "frontend"
+          ],
+          "evidence": [
+            "frontend->checkoutservice avg latency 96.52ms vs healthy 20.53ms",
+            "checkoutservice p95 latency 43.8ms is high compared to its callees' latencies under 3ms",
+            "checkoutservice pod was RECREATED 156s ago",
+            "checkoutservice and its outbound calls show 0.0% errors",
+            "productcatalogservice p95 0.48ms, cartservice p95 3.77ms, paymentservice p95 0.7ms all low",
+            "frontend p95 latency 79.59ms, reflecting slow checkoutservice calls"
+          ],
+          "proposed_actions": [
+            {
+              "action": "no_action",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "checkoutservice pod was recently recreated and is running and ready, so the system is recovering on its own."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3678,
+        "output_tokens": 408,
+        "latency_s": 5.5,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S4",
+      "run": 1,
+      "ok": true,
+      "score": {
+        "scenario": "S4",
+        "root_cause_correct": false,
+        "propagation_jaccard": 0.0,
+        "action_correct": false,
+        "confidence": 0.95,
+        "fault_type_correct": false,
+        "predicted_root": "adservice",
+        "expected_root": "frontend"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "adservice",
+          "fault_type": "latency",
+          "confidence": 0.95,
+          "reasoning_chain": [
+            "frontend->adservice shows 48.8% errors and 213.24ms average latency, much higher than its healthy 1.8ms latency.",
+            "frontend->cartservice, frontend->currencyservice, frontend->productcatalogservice, frontend->recommendationservice, and frontend->shippingservice all show high latency but no errors, indicating they are affected downstream.",
+            "adservice has 42.5% errors and 467.45ms p95 latency measured from caller side, confirming it is slow and failing.",
+            "No other service has multiple independent callers showing errors converging on it, so adservice is the unique root cause.",
+            "Frontend's own p95 latency is very high (4617.29ms) due to slow calls to multiple downstream services including adservice.",
+            "Pod health shows adservice is running and ready, so the fault is latency, not crash or pod_kill."
+          ],
+          "propagation_path": [
+            "frontend"
+          ],
+          "evidence": [
+            "frontend->adservice: 48.8% errors (21/43 calls), avg latency 213.24ms vs healthy 1.8ms",
+            "adservice: 42.5% errors, p95 latency 467.45ms (caller side)",
+            "frontend->cartservice: avg latency 182.78ms vs healthy 1.79ms",
+            "frontend->currencyservice: avg latency 244.63ms vs healthy 3.64ms",
+            "frontend->productcatalogservice: avg latency 157.38ms vs healthy 12.71ms",
+            "frontend->recommendationservice: avg latency 255.06ms vs healthy 22.12ms",
+            "frontend->shippingservice: avg latency 157.51ms vs healthy 5.68ms",
+            "frontend: p95 latency 4617.29ms"
+          ],
+          "proposed_actions": [
+            {
+              "action": "restart_pod",
+              "target": "adservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "Restarting adservice pod may clear the latency and error issues causing high failure rate."
+            },
+            {
+              "action": "scale_up",
+              "target": "adservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "If resource exhaustion is suspected, scaling up adservice could reduce latency and errors."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3939,
+        "output_tokens": 555,
+        "latency_s": 6.42,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S4",
+      "run": 2,
+      "ok": true,
+      "score": {
+        "scenario": "S4",
+        "root_cause_correct": false,
+        "propagation_jaccard": 0.0,
+        "action_correct": false,
+        "confidence": 0.95,
+        "fault_type_correct": false,
+        "predicted_root": "adservice",
+        "expected_root": "frontend"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "adservice",
+          "fault_type": "crash",
+          "confidence": 0.95,
+          "reasoning_chain": [
+            "frontend->adservice shows 48.8% errors and 213.24ms average latency, much higher than its healthy 1.8ms.",
+            "frontend->cartservice, frontend->currencyservice, frontend->productcatalogservice, frontend->recommendationservice, and frontend->shippingservice are all slow but have 0% errors, indicating no crash in those services.",
+            "adservice has 42.5% errors and high p95 latency 467.45ms measured from caller side, indicating it is failing and slow.",
+            "No other callers show errors against adservice, but frontend is the only caller, so the fault converges on adservice.",
+            "adservice emits no traces of its own, so its internal metrics are from caller side, consistent with a crash or partial outage.",
+            "frontend's own p95 latency is very high (4617.29ms) due to slow and failing calls to adservice and other services, but frontend itself has 0% errors, indicating it is a victim, not the root cause.",
+            "No CPU data is available, but the high error rate and caller-side latency on adservice strongly indicate a crash or pod failure.",
+            "Pod health shows adservice pod is running and ready, so no recent pod kill or restart is indicated.",
+            "Therefore, the root cause is adservice crash or partial failure causing errors and latency, propagating to frontend and other services called by frontend."
+          ],
+          "propagation_path": [
+            "frontend"
+          ],
+          "evidence": [
+            "frontend->adservice: 48.8% errors (21/43 calls), avg latency 213.24ms vs healthy 1.8ms",
+            "adservice: 42.5% errors, p95 latency 467.45ms (caller side)",
+            "frontend: p95 latency 4617.29ms, 0.0% errors",
+            "frontend->cartservice: avg latency 182.78ms vs healthy 1.79ms, 0.0% errors",
+            "frontend->currencyservice: avg latency 244.63ms vs healthy 3.64ms, 0.0% errors",
+            "frontend->productcatalogservice: avg latency 157.38ms vs healthy 12.71ms, 0.0% errors"
+          ],
+          "proposed_actions": [
+            {
+              "action": "restart_pod",
+              "target": "adservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "Restarting adservice pod can recover it from crash or partial failure causing high errors and latency."
+            },
+            {
+              "action": "no_action",
+              "target": "adservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "If the issue is transient and pod is already recovering, no action is needed."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3939,
+        "output_tokens": 650,
+        "latency_s": 8.83,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S4",
+      "run": 3,
+      "ok": true,
+      "score": {
+        "scenario": "S4",
+        "root_cause_correct": false,
+        "propagation_jaccard": 0.0,
+        "action_correct": false,
+        "confidence": 0.95,
+        "fault_type_correct": false,
+        "predicted_root": "adservice",
+        "expected_root": "frontend"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "adservice",
+          "fault_type": "latency",
+          "confidence": 0.95,
+          "reasoning_chain": [
+            "frontend->adservice shows 48.8% errors and 213.24ms average latency, much higher than its healthy 1.8ms latency.",
+            "adservice has 42.5% errors and 467.45ms p95 latency measured from caller side, indicating it is slow and failing.",
+            "Multiple other frontend outbound edges are slow but have 0% errors and low p95 latency on their services, indicating they are not root cause.",
+            "adservice is the only service with converging failing edges from frontend and high error rate, indicating it is the root cause.",
+            "frontend's own p95 latency is very high (4617.29ms) due to waiting on slow and failing calls to adservice and other services.",
+            "No CPU data is available, so resource exhaustion cannot be ruled out, but the high error rate and latency on adservice points to latency fault type."
+          ],
+          "propagation_path": [
+            "frontend"
+          ],
+          "evidence": [
+            "frontend -> adservice: 48.8% errors (21/43 calls), avg latency 213.24ms vs healthy 1.8ms",
+            "adservice: 42.5% errors, p95 latency 467.45ms (caller side)",
+            "frontend -> cartservice: avg latency 182.78ms vs healthy 1.79ms",
+            "frontend -> currencyservice: avg latency 244.63ms vs healthy 3.64ms",
+            "frontend -> productcatalogservice: avg latency 157.38ms vs healthy 12.71ms",
+            "frontend p95 latency 4617.29ms"
+          ],
+          "proposed_actions": [
+            {
+              "action": "restart_pod",
+              "target": "adservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "Restarting adservice pod may clear the latency and error issues causing failures and slow responses."
+            },
+            {
+              "action": "scale_up",
+              "target": "adservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "If resource exhaustion is causing latency, scaling up adservice could help reduce delays."
+            },
+            {
+              "action": "no_action",
+              "target": "",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "If the issue resolves after pod restart or scaling, no further action is needed."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3939,
+        "output_tokens": 562,
+        "latency_s": 7.34,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S4",
+      "run": 4,
+      "ok": true,
+      "score": {
+        "scenario": "S4",
+        "root_cause_correct": false,
+        "propagation_jaccard": 0.0,
+        "action_correct": false,
+        "confidence": 0.95,
+        "fault_type_correct": false,
+        "predicted_root": "adservice",
+        "expected_root": "frontend"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "adservice",
+          "fault_type": "crash",
+          "confidence": 0.95,
+          "reasoning_chain": [
+            "frontend->adservice shows 48.8% errors and 213.24ms average latency, a large increase from healthy 0.0% errors and 1.8ms latency.",
+            "No other callers show errors against adservice, but frontend calls many services and only adservice shows high errors and latency.",
+            "adservice's own p95 latency is 467.45ms measured from caller side, indicating it is slow or unresponsive.",
+            "Other services called by frontend (cartservice, currencyservice, productcatalogservice, recommendationservice, shippingservice) have low error rates and low p95 latencies, so they are not root cause.",
+            "The high error rate and latency on frontend->adservice edge converging from one caller indicates adservice is the root cause.",
+            "No CPU data is available, but the high error rate and latency with no other slow downstream services suggests adservice is crashed or unhealthy.",
+            "Pod health shows adservice is running and ready, but high errors and latency indicate internal failure or crash-like behavior.",
+            "Propagation path includes frontend because frontend calls adservice and experiences errors and latency."
+          ],
+          "propagation_path": [
+            "frontend"
+          ],
+          "evidence": [
+            "frontend->adservice: 48.8% errors (21/43 calls), avg latency 213.24ms vs healthy 1.8ms",
+            "adservice p95 latency 467.45ms measured from caller side",
+            "frontend->cartservice: avg latency 182.78ms vs healthy 1.79ms but 0.0% errors",
+            "frontend->currencyservice: avg latency 244.63ms vs healthy 3.64ms but 0.0% errors",
+            "frontend->productcatalogservice: avg latency 157.38ms vs healthy 12.71ms but 0.0% errors",
+            "frontend->recommendationservice: avg latency 255.06ms vs healthy 22.12ms but 0.0% errors",
+            "frontend->shippingservice: avg latency 157.51ms vs healthy 5.68ms but 0.0% errors"
+          ],
+          "proposed_actions": [
+            {
+              "action": "restart_pod",
+              "target": "adservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "High error rate and latency indicate adservice is unhealthy or crashed; restarting pod can restore service."
+            },
+            {
+              "action": "no_action",
+              "target": "adservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "If pod was recently restarted or recovering, no action is needed."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3939,
+        "output_tokens": 614,
+        "latency_s": 7.64,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S4",
+      "run": 5,
+      "ok": true,
+      "score": {
+        "scenario": "S4",
+        "root_cause_correct": false,
+        "propagation_jaccard": 0.0,
+        "action_correct": false,
+        "confidence": 0.95,
+        "fault_type_correct": false,
+        "predicted_root": "adservice",
+        "expected_root": "frontend"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "adservice",
+          "fault_type": "latency",
+          "confidence": 0.95,
+          "reasoning_chain": [
+            "frontend->adservice shows 48.8% errors and 213.24ms average latency, much higher than its healthy 1.8ms latency.",
+            "adservice has 42.5% errors and 467.45ms p95 latency measured from caller side, indicating it is slow and failing.",
+            "Multiple other frontend outbound edges are slow but have 0% errors and low p95 latency on their own services, indicating they are not root cause.",
+            "adservice is the only service with converging failing edges from frontend and high error rate, making it the root cause.",
+            "frontend was recreated recently but is ready and has no errors, so it is not the root cause.",
+            "No CPU data is available, but the pattern of high latency and errors on adservice points to a latency fault rather than resource exhaustion.",
+            "Propagation path includes frontend because it experiences high latency and errors due to adservice failure."
+          ],
+          "propagation_path": [
+            "frontend"
+          ],
+          "evidence": [
+            "frontend -> adservice: 48.8% errors (21/43 calls), avg latency 213.24ms vs healthy 1.8ms",
+            "adservice: 42.5% errors, p95 latency 467.45ms (caller side)",
+            "frontend -> cartservice: avg latency 182.78ms vs healthy 1.79ms, 0% errors",
+            "frontend -> currencyservice: avg latency 244.63ms vs healthy 3.64ms, 0% errors",
+            "frontend -> productcatalogservice: avg latency 157.38ms vs healthy 12.71ms, 0% errors",
+            "frontend: p95 latency 4617.29ms, 0% errors, pod recreated 366s ago and ready"
+          ],
+          "proposed_actions": [
+            {
+              "action": "restart_pod",
+              "target": "adservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "Restarting adservice pod may clear the latency and error issues causing high failure rate."
+            },
+            {
+              "action": "scale_up",
+              "target": "adservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "Scaling up adservice could help if the issue is resource exhaustion, but no CPU data is available to confirm."
+            },
+            {
+              "action": "no_action",
+              "target": "frontend",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "Frontend pod was recently recreated and is ready; no action needed on frontend."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3939,
+        "output_tokens": 603,
+        "latency_s": 7.28,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S5",
+      "run": 1,
+      "ok": true,
+      "score": {
+        "scenario": "S5",
+        "root_cause_correct": false,
+        "propagation_jaccard": 0.5,
+        "action_correct": true,
+        "confidence": 0.9,
+        "fault_type_correct": false,
+        "predicted_root": "checkoutservice",
+        "expected_root": "productcatalogservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "checkoutservice",
+          "fault_type": "latency",
+          "confidence": 0.9,
+          "reasoning_chain": [
+            "Multiple callers (frontend and checkoutservice) show slow calls converging on productcatalogservice, but productcatalogservice's own p95 latency is low (0.48ms), so it is not the root cause.",
+            "checkoutservice shows very high p95 latency (625ms) and slow outbound calls to productcatalogservice (101.85ms), indicating it is slow while processing and relaying delays downstream.",
+            "frontend calls checkoutservice slowly (250.35ms) and also calls productcatalogservice and recommendationservice slowly, but productcatalogservice's own latency is low, so frontend is affected by checkoutservice's slowness, not the root cause.",
+            "recommendationservice calls productcatalogservice slowly, but productcatalogservice is fast internally, so recommendationservice is relaying delays from productcatalogservice or upstream.",
+            "checkoutservice is the only service with high own latency and slow outbound calls to multiple downstream services, indicating it is the root cause of latency.",
+            "No errors or crashes are observed, and pod health shows productcatalogservice was recreated long ago, so no pod_kill or crash is involved."
+          ],
+          "propagation_path": [
+            "frontend",
+            "productcatalogservice",
+            "recommendationservice"
+          ],
+          "evidence": [
+            "checkoutservice p95 latency is 625.0ms",
+            "checkoutservice -> productcatalogservice latency is 101.85ms (slow)",
+            "frontend -> checkoutservice latency is 250.35ms (slow)",
+            "productcatalogservice p95 latency is 0.48ms (fast)",
+            "recommendationservice -> productcatalogservice latency is 92.42ms (slow) but productcatalogservice is fast internally",
+            "frontend p95 latency is 1447.79ms (high)"
+          ],
+          "proposed_actions": [
+            {
+              "action": "adjust_resources",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "checkoutservice shows high latency while processing and slow outbound calls, indicating resource exhaustion or misconfiguration causing slowness; adjusting resources may alleviate this."
+            },
+            {
+              "action": "restart_pod",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "If resource adjustment does not help, restarting checkoutservice pod may clear transient issues causing latency."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3838,
+        "output_tokens": 461,
+        "latency_s": 5.36,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S5",
+      "run": 2,
+      "ok": true,
+      "score": {
+        "scenario": "S5",
+        "root_cause_correct": false,
+        "propagation_jaccard": 0.3333,
+        "action_correct": true,
+        "confidence": 0.9,
+        "fault_type_correct": false,
+        "predicted_root": "checkoutservice",
+        "expected_root": "productcatalogservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "checkoutservice",
+          "fault_type": "latency",
+          "confidence": 0.9,
+          "reasoning_chain": [
+            "Multiple slow edges converge on productcatalogservice, but productcatalogservice's own p95 latency is low at 0.48ms, so it is not the root cause.",
+            "checkoutservice->productcatalogservice is slow (101.85ms) and frontend->checkoutservice is also slow (250.35ms), indicating checkoutservice is slow processing requests.",
+            "checkoutservice's own p95 latency is high at 625.0ms, confirming it is slow internally rather than queuing before CPU.",
+            "frontend->checkoutservice is slow, but frontend's own p95 latency is very high (1447.79ms), indicating frontend is affected downstream but not the root cause.",
+            "checkoutservice calls many downstream services with low latency and zero errors, so the fault is internal to checkoutservice, not its dependencies.",
+            "checkoutservice is on the critical business path and its slowness propagates to frontend and other services calling it."
+          ],
+          "propagation_path": [
+            "frontend"
+          ],
+          "evidence": [
+            "checkoutservice -> productcatalogservice: trung binh 101.85ms, luc khoe manh 0.92ms",
+            "frontend -> checkoutservice: trung binh 250.35ms, luc khoe manh 53.17ms",
+            "productcatalogservice p95 latency 0.48ms",
+            "checkoutservice p95 latency 625.0ms",
+            "frontend p95 latency 1447.79ms",
+            "checkoutservice calls to downstream services have low latency and 0.0% errors"
+          ],
+          "proposed_actions": [
+            {
+              "action": "adjust_resources",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "checkoutservice shows high internal latency without CPU data, likely due to resource exhaustion or misconfiguration; adjusting resources may alleviate the bottleneck."
+            },
+            {
+              "action": "restart_pod",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "If resource adjustment does not help, restarting checkoutservice pods may clear transient issues causing latency."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3838,
+        "output_tokens": 419,
+        "latency_s": 6.28,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S5",
+      "run": 3,
+      "ok": true,
+      "score": {
+        "scenario": "S5",
+        "root_cause_correct": false,
+        "propagation_jaccard": 0.5,
+        "action_correct": true,
+        "confidence": 0.9,
+        "fault_type_correct": false,
+        "predicted_root": "checkoutservice",
+        "expected_root": "productcatalogservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "checkoutservice",
+          "fault_type": "latency",
+          "confidence": 0.9,
+          "reasoning_chain": [
+            "Multiple slow edges converge on productcatalogservice, but productcatalogservice's own p95 latency is low at 0.48ms, so it is not the root cause.",
+            "checkoutservice->productcatalogservice is slow (101.85ms) and frontend->checkoutservice is also slow (250.35ms), indicating checkoutservice is slow while processing.",
+            "checkoutservice's own p95 latency is high at 625.0ms, confirming it is slow internally rather than queuing.",
+            "frontend->checkoutservice is slow but productcatalogservice and other downstream services have low latency, so the delay originates at checkoutservice.",
+            "No errors are reported on any edges or services, so the fault is latency, not errors or crashes.",
+            "CPU usage data is missing, so resource exhaustion cannot be ruled out, but the high internal latency points to application-level latency in checkoutservice.",
+            "checkoutservice is on the critical business path and its slowness propagates to frontend and indirectly to productcatalogservice and recommendationservice."
+          ],
+          "propagation_path": [
+            "frontend",
+            "productcatalogservice",
+            "recommendationservice"
+          ],
+          "evidence": [
+            "checkoutservice->productcatalogservice: avg 101.85ms vs healthy 0.92ms",
+            "frontend->checkoutservice: avg 250.35ms vs healthy 53.17ms",
+            "checkoutservice p95 latency 625.0ms",
+            "productcatalogservice p95 latency 0.48ms",
+            "frontend p95 latency 1447.79ms",
+            "recommendationservice->productcatalogservice avg 92.42ms vs healthy 2.11ms"
+          ],
+          "proposed_actions": [
+            {
+              "action": "adjust_resources",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "checkoutservice shows high internal latency indicating it may be under-provisioned or misconfigured, adjusting resources may reduce latency."
+            },
+            {
+              "action": "restart_pod",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "If adjusting resources does not help, restarting checkoutservice pods may clear transient issues causing latency."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3838,
+        "output_tokens": 432,
+        "latency_s": 5.37,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S5",
+      "run": 4,
+      "ok": true,
+      "score": {
+        "scenario": "S5",
+        "root_cause_correct": false,
+        "propagation_jaccard": 0.3333,
+        "action_correct": true,
+        "confidence": 0.9,
+        "fault_type_correct": false,
+        "predicted_root": "checkoutservice",
+        "expected_root": "productcatalogservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "checkoutservice",
+          "fault_type": "latency",
+          "confidence": 0.9,
+          "reasoning_chain": [
+            "Multiple slow edges converge on productcatalogservice, but productcatalogservice's own p95 latency is low at 0.48ms, so it is not the root cause.",
+            "checkoutservice->productcatalogservice calls are slow (101.85ms avg) and checkoutservice's own p95 latency is high at 625.0ms, indicating checkoutservice is slow processing requests.",
+            "frontend->checkoutservice calls are also slow (250.35ms avg) and frontend's own p95 latency is very high at 1447.79ms, showing latency propagates upward from checkoutservice.",
+            "checkoutservice calls many downstream services with low latency, so the latency is not due to downstream dependencies but internal to checkoutservice.",
+            "checkoutservice was not recently recreated and has no pod health issues, so the fault is latency, not pod_kill or crash.",
+            "No CPU data is available, so resource exhaustion cannot be ruled out, but the pattern of slow processing with low downstream latency points to latency within checkoutservice itself."
+          ],
+          "propagation_path": [
+            "frontend"
+          ],
+          "evidence": [
+            "checkoutservice->productcatalogservice: trung binh 101.85ms, p95 625.0ms",
+            "frontend->checkoutservice: trung binh 250.35ms, p95 1447.79ms",
+            "productcatalogservice p95 latency 0.48ms",
+            "checkoutservice calls to other services have low latency (e.g. paymentservice p95 0.87ms)",
+            "frontend->productcatalogservice: trung binh 90.55ms, p95 0.48ms"
+          ],
+          "proposed_actions": [
+            {
+              "action": "adjust_resources",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "checkoutservice shows high latency while downstream services are fast, indicating internal resource bottlenecks; adjusting resources may reduce latency."
+            },
+            {
+              "action": "restart_pod",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "If resource adjustment does not help, restarting checkoutservice pods may clear transient issues causing latency."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3838,
+        "output_tokens": 437,
+        "latency_s": 6.13,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S5",
+      "run": 5,
+      "ok": true,
+      "score": {
+        "scenario": "S5",
+        "root_cause_correct": false,
+        "propagation_jaccard": 0.5,
+        "action_correct": false,
+        "confidence": 0.9,
+        "fault_type_correct": false,
+        "predicted_root": "checkoutservice",
+        "expected_root": "productcatalogservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "checkoutservice",
+          "fault_type": "latency",
+          "confidence": 0.9,
+          "reasoning_chain": [
+            "Multiple slow edges converge on productcatalogservice from checkoutservice, frontend, and recommendationservice.",
+            "However, productcatalogservice's own p95 latency is low at 0.48ms, indicating it is not slow internally.",
+            "checkoutservice shows high p95 latency of 625.0ms and slow outbound calls to productcatalogservice (101.85ms) and slow inbound calls from frontend (250.35ms).",
+            "Frontend's slow calls to checkoutservice and productcatalogservice are likely due to checkoutservice's slowness, as productcatalogservice is fast internally.",
+            "Recommendationservice also shows slow calls to productcatalogservice, but its own p95 is 236.57ms, indicating it is affected downstream.",
+            "No errors or CPU data to suggest resource exhaustion or crashes; pod recreation of productcatalogservice was 367s ago, so not a recent crash.",
+            "Therefore, checkoutservice is the root cause of latency, propagating slowness to frontend and recommendationservice via productcatalogservice.",
+            "Propagation path includes frontend, recommendationservice, and productcatalogservice as they experience increased latency downstream of checkoutservice."
+          ],
+          "propagation_path": [
+            "frontend",
+            "recommendationservice",
+            "productcatalogservice"
+          ],
+          "evidence": [
+            "checkoutservice p95 latency 625.0ms",
+            "checkoutservice -> productcatalogservice avg latency 101.85ms vs productcatalogservice p95 0.48ms",
+            "frontend -> checkoutservice avg latency 250.35ms vs frontend p95 1447.79ms",
+            "recommendationservice p95 latency 236.57ms",
+            "frontend -> productcatalogservice avg latency 90.55ms vs productcatalogservice p95 0.48ms",
+            "productcatalogservice pod was RECREATED 367s ago, no recent crash"
+          ],
+          "proposed_actions": [
+            {
+              "action": "restart_pod",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "checkoutservice shows high latency with no CPU data; restarting pod may clear transient issues causing slowness."
+            },
+            {
+              "action": "adjust_resources",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "If resource exhaustion is suspected, adjusting CPU or memory limits may help reduce latency."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3838,
+        "output_tokens": 465,
+        "latency_s": 5.22,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S6",
+      "run": 1,
+      "ok": true,
+      "score": {
+        "scenario": "S6",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": true,
+        "confidence": 1.0,
+        "fault_type_correct": true,
+        "predicted_root": "currencyservice",
+        "expected_root": "currencyservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "currencyservice",
+          "fault_type": "crash",
+          "confidence": 1.0,
+          "reasoning_chain": [
+            "currencyservice has NO PODS AT ALL, indicating it is down or scaled to zero.",
+            "checkoutservice->currencyservice and frontend->currencyservice both show 100% errors, indicating currencyservice is failing for multiple independent callers.",
+            "checkoutservice->currencyservice and frontend->currencyservice have near-zero latency, showing immediate failure rather than latency issues.",
+            "checkoutservice->currencyservice failure causes checkoutservice->currencyservice calls to fail, which propagates errors to frontend->checkoutservice calls, also at 100% error rate.",
+            "checkoutservice and frontend both show 100% errors and high p95 latency, but their failures are due to downstream currencyservice being down.",
+            "Missing calls from checkoutservice to paymentservice and emailservice, and from frontend to adservice, recommendationservice, and shippingservice, are likely due to collapsed throughput caused by currencyservice failure on the critical path.",
+            "Therefore, currencyservice crash is the root cause, propagating errors and latency up the critical path through checkoutservice and frontend."
+          ],
+          "propagation_path": [
+            "checkoutservice",
+            "frontend"
+          ],
+          "evidence": [
+            "currencyservice: NO PODS AT ALL",
+            "checkoutservice->currencyservice: 100.0% errors (7/7 calls), avg latency 0.04ms",
+            "frontend->currencyservice: 100.0% errors (39/39 calls), avg latency 0.04ms",
+            "checkoutservice: 100.0% errors, p95 9750.0ms",
+            "frontend: 70.3% errors, p95 9543.17ms",
+            "checkoutservice->paymentservice missing calls",
+            "frontend->adservice missing calls"
+          ],
+          "proposed_actions": [
+            {
+              "action": "scale_up",
+              "target": "currencyservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "currencyservice has no pods running, so scaling it up or redeploying will restore service availability and fix the root cause crash."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3865,
+        "output_tokens": 476,
+        "latency_s": 5.94,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S6",
+      "run": 2,
+      "ok": true,
+      "score": {
+        "scenario": "S6",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": true,
+        "confidence": 1.0,
+        "fault_type_correct": true,
+        "predicted_root": "currencyservice",
+        "expected_root": "currencyservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "currencyservice",
+          "fault_type": "crash",
+          "confidence": 1.0,
+          "reasoning_chain": [
+            "currencyservice has NO PODS AT ALL, indicating it is completely down.",
+            "checkoutservice->currencyservice and frontend->currencyservice both show 100% errors, indicating currencyservice is failing for multiple independent callers.",
+            "checkoutservice->paymentservice and checkoutservice->emailservice calls are missing, consistent with currencyservice being down and blocking downstream calls.",
+            "checkoutservice->currencyservice and frontend->currencyservice errors propagate to checkoutservice and frontend, which also show 100% errors.",
+            "checkoutservice and frontend show very high p95 latencies (9750ms and 9543ms respectively), caused by retries or timeouts waiting for currencyservice.",
+            "productcatalogservice shows high latency but no errors, indicating it is slow but not failing; the root cause is the crash of currencyservice.",
+            "The critical business path is affected starting from currencyservice failure, propagating to checkoutservice and frontend."
+          ],
+          "propagation_path": [
+            "checkoutservice",
+            "frontend"
+          ],
+          "evidence": [
+            "currencyservice: NO PODS AT ALL",
+            "checkoutservice->currencyservice: 100.0% errors (7/7 calls)",
+            "frontend->currencyservice: 100.0% errors (39/39 calls)",
+            "checkoutservice->paymentservice: missing calls",
+            "checkoutservice->emailservice: missing calls",
+            "checkoutservice: 100.0% errors, p95 9750.0ms",
+            "frontend: 70.3% errors, p95 9543.17ms"
+          ],
+          "proposed_actions": [
+            {
+              "action": "scale_up",
+              "target": "currencyservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "currencyservice has no pods running, so scaling it up will restore service availability."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3865,
+        "output_tokens": 430,
+        "latency_s": 5.32,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S6",
+      "run": 3,
+      "ok": true,
+      "score": {
+        "scenario": "S6",
+        "root_cause_correct": true,
+        "propagation_jaccard": 0.5,
+        "action_correct": true,
+        "confidence": 1.0,
+        "fault_type_correct": true,
+        "predicted_root": "currencyservice",
+        "expected_root": "currencyservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "currencyservice",
+          "fault_type": "crash",
+          "confidence": 1.0,
+          "reasoning_chain": [
+            "currencyservice has NO PODS AT ALL, indicating it is down or scaled to zero.",
+            "checkoutservice->currencyservice and frontend->currencyservice both show 100% errors, indicating currencyservice is failing for multiple independent callers.",
+            "checkoutservice->paymentservice and checkoutservice->emailservice calls are missing, consistent with checkoutservice failing to proceed due to currencyservice failure.",
+            "checkoutservice->currencyservice errors propagate to frontend->checkoutservice which also shows 100% errors and high latency, confirming currencyservice is the root cause.",
+            "productcatalogservice and cartservice show high latency but no errors, indicating they are victims of the failure downstream.",
+            "No CPU data is available, but the absence of pods for currencyservice is conclusive evidence of a crash rather than resource exhaustion."
+          ],
+          "propagation_path": [
+            "checkoutservice",
+            "frontend",
+            "productcatalogservice",
+            "cartservice"
+          ],
+          "evidence": [
+            "currencyservice: NO PODS AT ALL",
+            "checkoutservice->currencyservice: 100.0% errors (7/7 calls)",
+            "frontend->currencyservice: 100.0% errors (39/39 calls)",
+            "frontend->checkoutservice: 100.0% errors (8/8 calls), p95 latency 9543.17ms",
+            "checkoutservice->productcatalogservice: p95 latency 9750.0ms",
+            "cartservice: p95 latency 3.94ms (measured from caller side)"
+          ],
+          "proposed_actions": [
+            {
+              "action": "scale_up",
+              "target": "currencyservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "currencyservice has no pods running, so scaling up will restore service availability."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3865,
+        "output_tokens": 420,
+        "latency_s": 5.35,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S6",
+      "run": 4,
+      "ok": true,
+      "score": {
+        "scenario": "S6",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": false,
+        "confidence": 1.0,
+        "fault_type_correct": true,
+        "predicted_root": "currencyservice",
+        "expected_root": "currencyservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "currencyservice",
+          "fault_type": "crash",
+          "confidence": 1.0,
+          "reasoning_chain": [
+            "currencyservice has NO PODS AT ALL, indicating it is down or scaled to zero.",
+            "checkoutservice->currencyservice and frontend->currencyservice both show 100% errors, indicating currencyservice is failing for multiple independent callers.",
+            "checkoutservice->paymentservice and checkoutservice->emailservice calls are missing, consistent with currencyservice being down and blocking checkoutservice's progress.",
+            "checkoutservice->currencyservice errors propagate to frontend->checkoutservice which also shows 100% errors and high latency, confirming currencyservice is the root cause.",
+            "productcatalogservice and cartservice show high latency but no errors, indicating they are affected downstream but not the root cause.",
+            "currencyservice's own p95 latency is not available due to no pods, confirming crash rather than latency or resource exhaustion."
+          ],
+          "propagation_path": [
+            "checkoutservice",
+            "frontend"
+          ],
+          "evidence": [
+            "currencyservice: NO PODS AT ALL",
+            "checkoutservice->currencyservice: 100.0% errors (7/7 calls)",
+            "frontend->currencyservice: 100.0% errors (39/39 calls)",
+            "frontend->checkoutservice: 100.0% errors (8/8 calls), p95 9543.17ms",
+            "checkoutservice->paymentservice: missing calls",
+            "checkoutservice->emailservice: missing calls",
+            "productcatalogservice: p95 9750.0ms, 0.0% errors",
+            "cartservice: p95 3.94ms, 0.0% errors"
+          ],
+          "proposed_actions": [
+            {
+              "action": "no_action",
+              "target": "currencyservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "currencyservice is down with no pods; Kubernetes likely scaled it to zero or pods crashed and are being recreated; no manual action needed as system is recovering."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3865,
+        "output_tokens": 449,
+        "latency_s": 4.35,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S6",
+      "run": 5,
+      "ok": true,
+      "score": {
+        "scenario": "S6",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": false,
+        "confidence": 1.0,
+        "fault_type_correct": true,
+        "predicted_root": "currencyservice",
+        "expected_root": "currencyservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "currencyservice",
+          "fault_type": "crash",
+          "confidence": 1.0,
+          "reasoning_chain": [
+            "currencyservice has NO PODS AT ALL, indicating it is completely down.",
+            "checkoutservice->currencyservice and frontend->currencyservice both show 100% errors, indicating currencyservice is failing for multiple independent callers.",
+            "checkoutservice->paymentservice and checkoutservice->emailservice calls are missing, consistent with checkoutservice failing downstream dependencies.",
+            "checkoutservice->currencyservice has 100% errors and 0.0% server-side errors, indicating the failure is due to currencyservice being down, not internal latency or resource exhaustion.",
+            "frontend->checkoutservice also shows 100% errors and high latency, but checkoutservice's errors are due to currencyservice failure, so checkoutservice is a victim, not the root cause.",
+            "productcatalogservice shows high latency but no errors, and its slow calls come from checkoutservice and frontend, indicating latency propagation from checkoutservice, not a crash.",
+            "Therefore, currencyservice crash is the root cause, propagating errors and latency up through checkoutservice and frontend."
+          ],
+          "propagation_path": [
+            "checkoutservice",
+            "frontend"
+          ],
+          "evidence": [
+            "currencyservice: NO PODS AT ALL",
+            "checkoutservice->currencyservice: 100.0% errors (7/7 calls), 0.0% server-side errors",
+            "frontend->currencyservice: 100.0% errors (39/39 calls), 0.0% server-side errors",
+            "checkoutservice->paymentservice: missing calls",
+            "checkoutservice->emailservice: missing calls",
+            "frontend->checkoutservice: 100.0% errors (8/8 calls), p95 9543.17ms",
+            "checkoutservice: 100.0% errors, p95 9750.0ms",
+            "productcatalogservice: p95 9750.0ms, 0.0% errors"
+          ],
+          "proposed_actions": [
+            {
+              "action": "no_action",
+              "target": "currencyservice",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "currencyservice is scaled to zero pods or all pods are gone; Kubernetes will recover by recreating pods automatically."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3865,
+        "output_tokens": 504,
+        "latency_s": 5.34,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    }
+  ]
+}

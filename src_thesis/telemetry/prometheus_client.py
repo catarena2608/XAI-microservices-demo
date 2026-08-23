@@ -240,6 +240,35 @@ class PrometheusClient:
             for p in sorted(pods)
         }
 
+    def cpu_vs_limit(self, namespace: str = "default") -> dict[str, dict]:
+        """CPU đang dùng so với trần CPU, theo từng deployment.
+
+        Bắt buộc có cho phase 3. Kịch bản S5 cho thấy XAI phải chẩn đoán nghẹt CPU
+        mà trong prompt không có lấy một con số CPU nào, vì `pod_resources` sắp xếp
+        theo RAM và chỉ in 8 pod nhiều nhất.
+
+        `ratio` gần 1.0 nghĩa là service đang chạm trần — chữ ký của lỗi F4.
+        """
+        used = self._as_map(
+            f'sum by (pod) (rate(container_cpu_usage_seconds_total'
+            f'{{namespace="{namespace}",container!=""}}[5m]))',
+            "pod",
+        )
+        limits = self._as_map(
+            f'sum by (pod) (kube_pod_container_resource_limits'
+            f'{{namespace="{namespace}",resource="cpu"}})',
+            "pod",
+        )
+        out: dict[str, dict] = {}
+        for pod, lim in limits.items():
+            u = used.get(pod, 0.0)
+            out[pod] = {
+                "used_cores": round(u, 4),
+                "limit_cores": round(lim, 4),
+                "ratio": round(u / lim, 3) if lim > 0 else None,
+            }
+        return out
+
     def deployment_availability(self, namespace: str = "default") -> dict[str, dict]:
         """Số bản chạy mong muốn và số đang sẵn sàng của từng deployment.
 

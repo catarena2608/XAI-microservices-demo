@@ -197,6 +197,39 @@ Thành công khi: có bảng số cho biết XAI đoán đúng nguyên nhân g�
 
 ---
 
+### Tình trạng: PHASE 3 XONG (2026-08-23)
+
+**Cổng chặn đạt với biên rộng: root cause accuracy 93.3%**, yêu cầu 50%. Đo hai loạt độc lập 6 kịch bản × 5 lần trên `gpt-4.1-mini`, ra 90.0% và 93.3%.
+
+```
+S1 100%   S2 100%   S3 100%   S4 40-60%   S5 100%   S6 100%
+PROPAGATION 0.78   hanh dong dung 90%   loai loi dung 77%
+```
+
+Khác kế hoạch ban đầu ở ba chỗ, đều có lý do trong `docs/thesis-notes.md`:
+
+- **6 kịch bản × 5 lần = 30 ca**, không phải 25. Kịch bản kép S6 cũng chấm điểm được.
+- **Đánh giá chạy trên snapshot đã lưu**, không đụng cluster (`eval/replay.py`). Bắt buộc phải vậy: mỗi lần sửa prompt phải đo lại cả 6 kịch bản, mà tiêm lỗi lại thì mất 30 phút một lượt và mỗi lượt ra trạng thái hơi khác nên không so sánh được.
+- **Hai nhà cung cấp qua một bộ code** (`reasoner.py` dùng thư viện OpenAI, Groq phục vụ theo đúng giao thức đó).
+
+Bảy lỗi đã sửa trong phase này, ba lỗi đáng nhớ nhất:
+
+1. **Snapshot giấu sự vắng mặt.** Deployment bị hạ về 0 bản sao thì không còn pod nào để liệt kê, nên POD HEALTH ghi "all 10 pods ready" mà không nói đáng lẽ phải có 11. Telemetry chỉ báo cáo cái đang tồn tại; muốn thấy cái thiếu thì phải có danh sách cái đáng lẽ phải có mà đối chiếu.
+2. **Prompt khẳng định điều sai sự thật.** Trường `cpu` rỗng nhưng vẫn in "no service is close to its CPU limit". Prompt thiếu dữ liệu chỉ làm model bớt chắc chắn; prompt nói sai chủ động đẩy model ra khỏi đúng nguyên nhân.
+3. **Bộ nhãn schema không phủ bộ nhãn đáp án.** Đáp án S3 ghi `pod_kill` mà schema không có nhãn đó, nên chỉ số loại lỗi của S3 luôn bằng 0 vì lý do kỹ thuật chứ không phải vì chẩn đoán kém.
+
+**Phát hiện về phương pháp: thêm quy tắc vào prompt không đơn điệu tăng.** Gói quy tắc v5 làm kết quả tụt từ 90% xuống 66.7%, vì một quy tắc đúng trong đa số trường hợp lại phá đúng trường hợp nó không áp dụng. Mọi thay đổi prompt phải đo lại trên **toàn bộ** bộ kịch bản.
+
+**Cảnh báo cho báo cáo:** con số 90–93% có rủi ro overfitting, vì prompt được chỉnh bằng cách soi chính 6 ca này. Phase 6 tiêm lỗi lại từ đầu, và **con số phase 6 mới là con số dùng để kết luận**.
+
+**Nợ mang sang phase 6:**
+
+- Trường `cpu` rỗng trong snapshot (Prometheus không trả về `kube_pod_container_resource_limits`) — cần cluster đang chạy mới chẩn đoán được. Đây là lý do S4 vẫn yếu nhất.
+- Bảng so sánh Groq với OpenAI: Groq gói miễn phí chỉ cho 8000 token mỗi phút mà một lần chẩn đoán tốn khoảng 5900, nên một loạt 30 ca mất trên 30 phút và hôm nay đã cạn hạn mức. Tính vào lịch phase 6.
+- `expected_propagation` của F4-frontend là danh sách rỗng vì `frontend` là cửa ngõ, không service nội bộ nào gọi nó.
+
+---
+
 ## Phase 4 — Digital Twin (1,5 tuần)
 
 Mục tiêu: dựng được bản sao ở namespace `twin`, đo được, xóa được, và biết nó giống production đến mức nào.

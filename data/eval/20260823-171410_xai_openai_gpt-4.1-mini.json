@@ -1,0 +1,146 @@
+{
+  "provider": "openai",
+  "model": "gpt-4.1-mini",
+  "runs_per_scenario": 1,
+  "overall": {
+    "n": 2,
+    "root_cause_accuracy": 0.5,
+    "root_cause_std": 0.7071,
+    "propagation_mean": 0.5,
+    "propagation_std": 0.7071,
+    "action_accuracy": 1.0,
+    "fault_type_accuracy": 0.5,
+    "mean_confidence": 0.5
+  },
+  "per_scenario": {
+    "S3": {
+      "n": 2,
+      "root_cause_accuracy": 0.5,
+      "root_cause_std": 0.7071,
+      "propagation_mean": 0.5,
+      "propagation_std": 0.7071,
+      "action_accuracy": 1.0,
+      "fault_type_accuracy": 0.5,
+      "mean_confidence": 0.5
+    }
+  },
+  "records": [
+    {
+      "scenario": "S3",
+      "run": 1,
+      "ok": true,
+      "score": {
+        "scenario": "S3",
+        "root_cause_correct": false,
+        "propagation_jaccard": 0.0,
+        "action_correct": true,
+        "confidence": 0.1,
+        "fault_type_correct": false,
+        "predicted_root": "none",
+        "expected_root": "checkoutservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "none",
+          "fault_type": "unknown",
+          "confidence": 0.1,
+          "reasoning_chain": [
+            "No service shows errors on inbound calls, all error rates are 0.0% or near zero.",
+            "All services have low p95 latencies except frontend which has 86.73ms p95 but no corresponding slow downstream calls.",
+            "No pods have restarts or missing pods, all 11 pods are ready.",
+            "CPU usage is low for all services, no resource exhaustion detected.",
+            "Call graph edges show no errors or high latency except frontend->checkoutservice which is 72.51ms avg but checkoutservice itself is not slow internally.",
+            "No evidence of crash, resource exhaustion, or dependency failure found."
+          ],
+          "propagation_path": [],
+          "evidence": [
+            "productcatalogservice: 0.0% errors, p95 0.48ms",
+            "currencyservice: 0.0% errors, p95 0.48ms",
+            "frontend: 0.1% errors, p95 86.73ms",
+            "checkoutservice: 0.0% errors, p95 166.67ms",
+            "frontend -> checkoutservice: 0.0% errors, avg 72.51ms",
+            "checkoutservice -> paymentservice: 0.0% errors, avg 2.97ms",
+            "all 11 pods ready, no restarts",
+            "no service is close to its CPU limit"
+          ],
+          "proposed_actions": [
+            {
+              "action": "no_action",
+              "target": "none",
+              "params": [],
+              "risk_class": "easy",
+              "rationale": "System is healthy with no clear fault; no action needed."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3222,
+        "output_tokens": 322,
+        "latency_s": 8.28,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    },
+    {
+      "scenario": "S3",
+      "run": 1,
+      "ok": true,
+      "score": {
+        "scenario": "S3",
+        "root_cause_correct": true,
+        "propagation_jaccard": 1.0,
+        "action_correct": true,
+        "confidence": 0.9,
+        "fault_type_correct": true,
+        "predicted_root": "checkoutservice",
+        "expected_root": "checkoutservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "checkoutservice",
+          "fault_type": "pod_kill",
+          "confidence": 0.9,
+          "reasoning_chain": [
+            "The only slow edge on the critical path is frontend -> checkoutservice with average latency 96.52ms, much higher than normal 20.53ms.",
+            "checkoutservice's own p95 latency is elevated at 43.8ms, indicating some slowness but not as high as caller-observed latency, suggesting partial recovery.",
+            "checkoutservice pod was recreated 156 seconds ago, indicating a recent restart event rather than a crash or resource exhaustion.",
+            "No other services show errors or slowdowns, and CPU usage is not near limits, so no resource exhaustion is evident.",
+            "The slow frontend -> checkoutservice edge is the root cause, with the fault type pod_kill due to recent pod recreation.",
+            "Propagation affects frontend, which calls checkoutservice and experiences the latency impact."
+          ],
+          "propagation_path": [
+            "frontend"
+          ],
+          "evidence": [
+            "frontend -> checkoutservice: avg latency 96.52ms vs healthy 20.53ms",
+            "checkoutservice p95 latency 43.8ms",
+            "checkoutservice pod was RECREATED 156s ago",
+            "No service is close to CPU limit",
+            "No errors reported on any edges"
+          ],
+          "proposed_actions": [
+            {
+              "action": "no_action",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "The checkoutservice pod was recently recreated and is recovering on its own; no intervention needed."
+            }
+          ]
+        },
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "attempts": 1,
+        "input_tokens": 3287,
+        "output_tokens": 295,
+        "latency_s": 4.56,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    }
+  ]
+}

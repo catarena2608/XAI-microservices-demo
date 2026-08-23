@@ -32,4 +32,5 @@ gha-creds-*.json
 .env
 __pycache__/
 data/runs/
+data/llm_cache/
 

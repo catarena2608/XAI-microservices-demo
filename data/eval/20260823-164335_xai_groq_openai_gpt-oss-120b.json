@@ -1,0 +1,98 @@
+{
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "runs_per_scenario": 1,
+  "overall": {
+    "n": 1,
+    "root_cause_accuracy": 0.0,
+    "root_cause_std": 0.0,
+    "propagation_mean": 0.5,
+    "propagation_std": 0.0,
+    "action_accuracy": 0.0,
+    "fault_type_accuracy": 0.0,
+    "mean_confidence": 0.85
+  },
+  "per_scenario": {
+    "S2": {
+      "n": 1,
+      "root_cause_accuracy": 0.0,
+      "root_cause_std": 0.0,
+      "propagation_mean": 0.5,
+      "propagation_std": 0.0,
+      "action_accuracy": 0.0,
+      "fault_type_accuracy": 0.0,
+      "mean_confidence": 0.85
+    }
+  },
+  "records": [
+    {
+      "scenario": "S2",
+      "run": 1,
+      "ok": true,
+      "score": {
+        "scenario": "S2",
+        "root_cause_correct": false,
+        "propagation_jaccard": 0.5,
+        "action_correct": false,
+        "confidence": 0.85,
+        "fault_type_correct": false,
+        "predicted_root": "checkoutservice",
+        "expected_root": "currencyservice"
+      },
+      "result": {
+        "explanation": {
+          "root_cause_service": "checkoutservice",
+          "fault_type": "resource_exhaustion",
+          "confidence": 0.85,
+          "reasoning_chain": [
+            "Observed high error rates on edges checkoutservice->currencyservice (58.8%) and frontend->checkoutservice (58.8%).",
+            "checkoutservice itself reports 65.4% errors in its own metrics, while its p95 latency (46.25ms) is modest and CPU usage is far from its limit.",
+            "All downstream services called by checkoutservice (currencyservice, productcatalogservice, shippingservice, emailservice, paymentservice) show 0% errors and low latency, indicating they are healthy.",
+            "Errors converge on checkoutservice as the caller, matching the pattern where a radiating slow/error edge points to the root cause.",
+            "Therefore the fault originates in checkoutservice, propagating to frontend which sees the same error rate."
+          ],
+          "propagation_path": [
+            "frontend"
+          ],
+          "evidence": [
+            "checkoutservice->currencyservice: 58.8% errors (10/17 calls)",
+            "frontend->checkoutservice: 58.8% errors (10/17 calls)",
+            "checkoutservice overall: 65.4% errors, p95 46.25ms",
+            "currencyservice metrics: 0.0% errors, p95 0.48ms",
+            "CPU usage of checkoutservice not near limit"
+          ],
+          "proposed_actions": [
+            {
+              "action": "restart_pod",
+              "target": "checkoutservice",
+              "params": [],
+              "risk_class": "hard",
+              "rationale": "Restarting the pod will clear any hidden state or resource leak causing the high error rate while the service itself shows no CPU pressure."
+            },
+            {
+              "action": "adjust_resources",
+              "target": "checkoutservice",
+              "params": [
+                {
+                  "key": "cpu",
+                  "value": "increase"
+                }
+              ],
+              "risk_class": "easy",
+              "rationale": "Increasing CPU limits gives headroom in case the errors are due to occasional CPU throttling not reflected in current usage metrics."
+            }
+          ]
+        },
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "attempts": 1,
+        "input_tokens": 2956,
+        "output_tokens": 2492,
+        "latency_s": 7.35,
+        "from_cache": false,
+        "used_strict_schema": true,
+        "errors": []
+      }
+    }
+  ]
+}

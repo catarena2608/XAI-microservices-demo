@@ -8,6 +8,11 @@ Nguyên tắc viết: ngắn, có số, không tính từ. Mỗi dòng thừa đ
 
 from __future__ import annotations
 
+# Pod ha tang, khong thuoc he thong nghiep vu duoc nghien cuu.
+# Loc khoi POD HEALTH de LLM khong do loi cho chinh he thong quan sat — nguy co
+# nay lo ra o kich ban S3 khi pod jaeger vua duoc khoi dong lai va hien trong prompt.
+INFRA_PODS = ("jaeger", "opentelemetrycollector", "loadgenerator")
+
 from src_thesis.graph.diff import GraphDiff
 from src_thesis.graph.logical_graph import LogicalTopology
 from src_thesis.graph.model import ServiceGraph
@@ -113,13 +118,65 @@ def describe_diff(diff: GraphDiff) -> str:
     return "\n".join(lines)
 
 
-def describe_pods(pods: list, recent_restart_s: float = 600.0) -> str:
+def describe_cpu(cpu: dict, slow_services: set[str] | None = None,
+                 ratio_alert: float = 0.7) -> str:
+    """CPU đang dùng so với trần, cho các service đáng ngờ.
+
+    Chỉ in service đang chạm trần hoặc đang bị nghi là chậm — in hết thì tốn token
+    mà phần lớn là số 0.07 vô nghĩa.
+    """
+    lines = ["CPU USAGE vs LIMIT (ratio near 1.0 means the service is CPU-throttled):"]
+    rows = []
+    for pod, v in cpu.items():
+        name = pod.rsplit("-", 2)[0]
+        ratio = v.get("ratio")
+        interesting = (ratio is not None and ratio >= ratio_alert) or                       (slow_services and name in slow_services)
+        if interesting:
+            rows.append((name, v))
+    for name, v in sorted(rows, key=lambda r: -(r[1].get("ratio") or 0)):
+        r = v.get("ratio")
+        lines.append(
+            f"  {name}: using {v['used_cores']:.3f} of {v['limit_cores']:.3f} cores"
+            + (f" ({r * 100:.0f}% of limit)" if r is not None else "")
+            + ("  <-- AT LIMIT" if r is not None and r >= ratio_alert else "")
+        )
+    if not rows:
+        # PHAN BIET HAI TRUONG HOP HOAN TOAN KHAC NHAU. Snapshot cua S4 va S5 co
+        # truong cpu RONG (Prometheus khong tra ve kube_pod_container_resource_limits),
+        # nhung ban cu van in "no service is close to its CPU limit" — tuc la noi voi
+        # model rang DA KIEM TRA VA KHONG CO GI, trong khi that ra CHUA DO DUOC GI.
+        # Prompt khang dinh mot dieu sai su that thi te hon han prompt thieu du lieu:
+        # no chu dong dan model ra khoi dung nguyen nhan.
+        if not cpu:
+            lines.append(
+                "  NO CPU DATA in this window - this is missing data, NOT evidence "
+                "that CPU is healthy. Do not rule out resource_exhaustion because "
+                "this section is empty."
+            )
+        else:
+            lines.append("  no service is close to its CPU limit")
+    return chr(10).join(lines)
+
+
+def expected_deployments(topo: LogicalTopology) -> list[str]:
+    """Danh sach deployment nghiep vu dang le phai dang chay.
+
+    Lay tu so do thiet ke, bo pod ha tang. Dung de phat hien deployment bien mat
+    han: khong co danh sach nay thi khong the biet mot cai ten da vang mat, vi
+    telemetry chi bao cao nhung gi DANG ton tai.
+    """
+    return sorted(n for n in topo.graph.nodes if not n.startswith(INFRA_PODS))
+
+
+def describe_pods(pods: list, recent_restart_s: float = 600.0,
+                  expected: list[str] | None = None) -> str:
     """Chỉ liệt kê pod không bình thường. Pod khỏe mạnh không đáng tốn token.
 
     KHÔNG lọc theo `restarts` vì số đó cộng dồn cả những lần tắt mở cluster, gần như
     pod nào cũng khác 0. Chỉ quan tâm pod VỪA khởi động lại trong `recent_restart_s`
     giây gần đây — đó mới là dấu hiệu sự cố đang diễn ra.
     """
+    pods = [p for p in pods if not p.name.startswith(INFRA_PODS)]
     bad = [
         p for p in pods
         if not p.ready
@@ -128,8 +185,25 @@ def describe_pods(pods: list, recent_restart_s: float = 600.0) -> str:
         or (p.age_s is not None and p.age_s <= recent_restart_s)
     ]
     lines = ["POD HEALTH:"]
+
+    # Deployment BIEN MAT HAN. Kich ban S2 ha so ban sao ve 0, luc do khong con
+    # pod nao mang ten do nua, nen vong lap `bad` o tren khong the thay gi: no chi
+    # duyet nhung pod DANG TON TAI. Thieu doan nay thi snapshot chi ghi
+    # "all 10 pods ready" va giau mat bang chung manh nhat, la dang le phai co 11.
+    gone: list[str] = []
+    if expected:
+        running = {p.deployment for p in pods}
+        gone = [d for d in expected if d not in running]
+    for d in gone:
+        lines.append(
+            f"  {d}: NO PODS AT ALL - deployment scaled to 0 or every pod is gone"
+        )
+
     if not bad:
-        lines.append(f"  all {len(pods)} pods ready, no restarts")
+        if gone:
+            lines.append(f"  the other {len(pods)} pods are ready, no restarts")
+        else:
+            lines.append(f"  all {len(pods)} pods ready, no restarts")
         return "\n".join(lines)
     for p in bad:
         when = (f", restarted {p.last_restart_age_s:.0f}s ago"
