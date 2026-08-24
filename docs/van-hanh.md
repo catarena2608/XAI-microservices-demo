@@ -88,6 +88,12 @@ kind delete cluster --name boutique
 docker start boutique-control-plane
 ```
 
+Bước này **bắt buộc phải làm bằng tay**. Mở Docker Desktop không tự bật cluster — đo thật ngày 2026-08-24: sau một đêm, container ở trạng thái `Exited (255) 10 hours ago` và `kubectl` báo `dial tcp 127.0.0.1:49877: connection refused`. Thấy thông báo đó thì gần như chắc chắn là container chưa chạy, kiểm tra bằng:
+
+```powershell
+docker ps -a --filter "name=boutique"
+```
+
 **3. Chờ các pod sống lại.**
 
 ```powershell
@@ -119,6 +125,40 @@ kubectl delete pod -l app=recommendationservice
 ```
 
 Chờ một phút rồi kiểm tra lại, cột RESTARTS phải là 0. Không cần sửa cấu hình gì cả — cố tình giữ nguyên kiểm tra sức khỏe của hệ thống gốc, vì kịch bản lỗi F4 bóp CPU dựa vào chính hành vi này.
+
+**3c. Pod kẹt ở `0/1 Running` hoặc `Unknown` — khác `CrashLoopBackOff`, và hay gặp hơn.**
+
+Đo thật ngày 2026-08-24: sau một đêm tắt máy, bật lại thì **6 trên 14 pod không sẵn sàng**, nhưng không pod nào ở `CrashLoopBackOff`. Chúng ở `0/1 Running` — tức container sống nhưng trượt kiểm tra sẵn sàng — riêng `loadgenerator` ở `Unknown`.
+
+Khác biệt quan trọng: `0/1 Running` **có thể tự khỏi**, `Unknown` thì **không bao giờ tự khỏi**. Sáng đó `currencyservice` tự khỏi sau khoảng một phút, `loadgenerator` thì nằm mãi.
+
+Đừng ngồi đoán pod nào tự khỏi. Chờ khoảng 2 phút rồi xóa hết những pod còn chưa sẵn sàng bằng một lệnh:
+
+```powershell
+kubectl get pods --no-headers | Where-Object { ($_ -split '\s+')[1] -ne '1/1' } | ForEach-Object { kubectl delete pod ($_ -split '\s+')[0] }
+```
+
+Xóa pod đang khỏe cũng không sao — Kubernetes tạo lại ngay, và không service nào ở đây lưu trạng thái trong pod.
+
+Kiểm tra lại, phải ra 14/14:
+
+```powershell
+kubectl get pods
+```
+
+**3d. Chờ 6 phút trước khi chạy bất cứ thí nghiệm nào.**
+
+Bắt buộc, không phải cho chắc. Cửa sổ quan sát rộng 5 phút, nên ngay sau khi bật lại, số liệu vẫn còn nguyên vết hỏng lúc khởi động: `checkoutservice -> emailservice` báo 100% lỗi dù mọi thứ đã bình thường.
+
+Chạy thí nghiệm lúc này thì `inject.py` chặn lại vì nền bẩn, và mỗi lần chặn tốn 6 phút thử lại — chờ trước rẻ hơn.
+
+Xác nhận sạch bằng:
+
+```powershell
+python scripts/smoke_snapshot.py
+```
+
+Phải ra `CONG CHAN PHASE 1: DAT`.
 
 **4. Kiểm tra ba cổng.**
 

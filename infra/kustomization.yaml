@@ -17,3 +17,4 @@ components:
 patches:
   - path: frontend-nodeport-patch.yaml
   - path: loadgenerator-mount-patch.yaml
+  - path: emailservice-probe-patch.yaml   # noi han tham do, xem chu thich trong file

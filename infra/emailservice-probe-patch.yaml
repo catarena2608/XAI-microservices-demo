@@ -1,0 +1,38 @@
+# Nới hạn thăm dò sống-chết của emailservice.
+#
+# VÌ SAO: sau mỗi lần node kind bị gián đoạn (máy ngủ, Docker khởi động lại),
+# emailservice rơi vào CrashLoopBackOff với thông báo:
+#
+#   Liveness probe failed: timeout: failed to connect service "10.244.0.x:8080"
+#   within 1s: context deadline exceeded
+#
+# Log của chính container lại ghi "listening on port: 8080", tức là ứng dụng SỐNG.
+# Đo lúc đó: CPU node 9%, RAM 53% — không hề thiếu tài nguyên. Hạn 1 giây của bản
+# gốc Google quá chặt với service Python trong môi trường kind trên WSL.
+#
+# Hậu quả nếu không sửa: mọi lần chụp snapshot nền đều bẩn vì
+# checkoutservice -> emailservice báo 100% lỗi, và không tiêm được kịch bản nào.
+#
+# KHÔNG kịch bản lỗi nào phụ thuộc vào hạn thăm dò của emailservice: F4 chỉ tác động
+# lên frontend và productcatalogservice. Nên nới ở đây an toàn.
+#
+# Cố ý chỉ nới emailservice, không nới toàn bộ: recommendationservice cũng từng
+# CrashLoopBackOff vì lý do tương tự, nhưng ở đó là do tranh CPU thật, và giữ
+# nguyên hạn chặt là một phần của hiện tượng đang nghiên cứu.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: emailservice
+spec:
+  template:
+    spec:
+      containers:
+        - name: server
+          livenessProbe:
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5

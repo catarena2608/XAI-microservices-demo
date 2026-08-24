@@ -561,7 +561,20 @@ Tức là nói với model rằng **đã kiểm tra CPU và không có gì bất
 
 Đây là lớp lỗi tệ hơn hẳn thiếu dữ liệu: **prompt thiếu dữ liệu chỉ làm model bớt chắc chắn, prompt nói sai sự thật chủ động đẩy model ra khỏi đúng nguyên nhân.** Nguyên tắc rút ra và áp dụng cho cả hệ thống: mọi câu tổng kết dạng "không có gì bất thường" đều phải phân biệt được với "không đo được", nếu không thì đừng in ra.
 
-Sửa: khi `cpu` rỗng thì in thẳng `NO CPU DATA in this window - this is missing data, NOT evidence that CPU is healthy`. Còn nguyên nhân Prometheus không trả về metric thì là món nợ phải xử lý ở phase 6, cần cluster đang chạy mới chẩn đoán được.
+Sửa: khi `cpu` rỗng thì in thẳng `NO CPU DATA in this window - this is missing data, NOT evidence that CPU is healthy`.
+
+**Đính chính nguyên nhân — chẩn đoán đầu tiên của tớ sai.** Tớ đoán Prometheus không trả về `kube_pod_container_resource_limits`. Kiểm tra trên cluster đang chạy thì metric có đủ, và `cpu_vs_limit()` gọi ra 12 kết quả bình thường. Số liệu chỉ đúng nguyên nhân khi xếp snapshot theo thời gian:
+
+```
+moi snapshot chup TRUOC 16:15  ->  cpu: 0
+hai snapshot chup SAU  16:15  ->  cpu: 12
+```
+
+16:15 chính là lúc `cpu_vs_limit()` được thêm vào code. Toàn bộ snapshot của phase 2 chụp trước khi hàm đó tồn tại, nên trường `cpu` rỗng vì **chưa có ai đi lấy**, không phải vì Prometheus thiếu.
+
+Bài học: khi một trường dữ liệu rỗng, hãy hỏi "code lúc đó đã biết lấy nó chưa" trước khi đi đổ lỗi cho nguồn dữ liệu. Dấu hiệu nhận biết rẻ nhất là **xếp theo thời gian và tìm mốc chuyển** — mốc đó gần như luôn trùng với một lần sửa code.
+
+Cách trả nợ: tiêm lại S4 và S5 để có snapshot mang dữ liệu CPU, chứ không phải sửa code.
 
 **Kết quả mốc phase 3 (prompt v3, OpenAI `gpt-4.1-mini`, 6 kịch bản × 5 lần = 30 ca):**
 
@@ -639,7 +652,414 @@ Bài học đưa vào báo cáo: **các quy tắc trong prompt tương tác vớ
 
 **Lỗi thứ bảy, nằm ở ĐÁP ÁN chứ không ở model.** `expected_propagation` của F4-frontend là danh sách rỗng, vì hàm sinh đáp án đi ngược lên tìm những service *gọi* service hỏng, mà `frontend` là cửa ngõ vào nên không service nội bộ nào gọi nó. Model liệt kê 6 callee nên Jaccard bằng 0 ở cả 5 lần. Ở đây model sai thật — các callee đó vẫn khỏe, chính `frontend` mới nghẹt — nhưng quy tắc dạy nó trả về danh sách rỗng lại nằm trong gói v5 đã bị loại vì làm tổng thể tệ đi. Đây là món nợ phase 6: tách hai quy tắc của v5 ra thử riêng từng cái, thay vì thêm cả gói.
 
+**KẾT QUẢ MẠNH NHẤT CỦA CẢ ĐỀ TÀI: thêm dữ liệu CPU, chẩn đoán từ 93.3% lên 100%.**
+
+Sau khi tiêm lại S4 và S5 để có snapshot mang dữ liệu CPU, chạy lại đánh giá phase 3 với **prompt không đổi một chữ nào** (vẫn v4, `gpt-4.1-mini`, 6 kịch bản × 5 lần):
+
+```
+                 truoc (thieu CPU)   sau (co CPU)
+S4 root cause         40-60%             100%
+S5 root cause            0%              100%
+S4 loai loi              0-60%           100%
+S5 loai loi              0%              100%
+
+ROOT CAUSE ACCURACY     93.3%            100.0%  (do lech chuan 0.000)
+loai loi dung           76.7%            100.0%
+hanh dong dung          90.0%             86.7%
+```
+
+**Đây là một thí nghiệm có đối chứng chuẩn.** Chỉ một biến thay đổi: snapshot có thêm mục CPU. Prompt, model, bộ kịch bản, cách chấm điểm đều giữ nguyên. Nên kết luận rút ra được là kết luận nhân quả, không phải tương quan.
+
+Bằng chứng cụ thể mà model thiếu trước đó:
+
+```
+S4: frontend: using 0.010 of 0.010 cores (99% of limit)  <-- AT LIMIT
+S5: productcatalogservice: using 0.009 of 0.010 cores (85% of limit)  <-- AT LIMIT
+```
+
+**Ý nghĩa cho báo cáo — đây là luận điểm trung tâm và giờ đã có số chứng minh:** chất lượng chẩn đoán bị chặn trên bởi **chất lượng telemetry**, không phải bởi năng lực suy luận của model. Trước khi có dữ liệu CPU, model suy luận hoàn toàn chặt chẽ nhưng vẫn sai, vì nó không thể suy ra thứ không có trong dữ liệu. Sau khi có, cùng model cùng prompt đạt tuyệt đối.
+
+Hệ quả thực tiễn nên viết vào phần kết luận: **đầu tư vào độ phủ telemetry cho lợi tức cao hơn đầu tư vào model mạnh hơn**, ít nhất trong khoảng mà đề tài này đo được.
+
+**Độ lệch chuẩn bằng 0 trên cả 30 ca** cũng đáng nói: khi bằng chứng đủ rõ, tính bất định của LLM gần như biến mất. Dao động quan sát được ở các lần chạy trước chủ yếu đến từ **dữ liệu mơ hồ**, không phải từ bản chất ngẫu nhiên của model.
+
+**Hai chỉ số chưa tuyệt đối, ghi lại trung thực:**
+
+- *Lan truyền 0.767.* Phần lớn do S4 luôn bằng 0 vì lý do kỹ thuật: `expected_propagation` của F4-frontend là danh sách rỗng (frontend là cửa ngõ, không service nội bộ nào gọi nó) còn model liệt kê 6 callee. Quy tắc dạy model trả về danh sách rỗng nằm trong gói v5 đã bị loại vì làm tổng thể tệ đi. Món nợ phase 6: tách hai quy tắc của v5 ra thử riêng từng cái.
+- *Hành động 86.7%, giảm nhẹ so với 90.0%.* Chỗ trừ điểm nằm ở S1: model chọn `scale_up` cho lỗi độ trễ chèn bằng biến môi trường, trong khi đáp án là `adjust_resources`, `restart_pod` hoặc `rollback`. Quy tắc sửa việc này cũng nằm trong gói v5 bị loại.
+
 ### Phase 4 — Digital Twin
+
+**Bước 4.0 — trả nợ dữ liệu CPU, và chẩn đoán đầu tiên của tớ sai.**
+
+Chi tiết đã ghi ở phần phase 3 (mục đính chính). Tóm lại: metric có đủ, chỉ là `cpu_vs_limit()` chưa tồn tại lúc chụp snapshot phase 2. Cách trả nợ là tiêm lại S4 và S5 chứ không phải sửa code.
+
+**Lỗi chặn đường: `emailservice` CrashLoopBackOff sau khi node bị gián đoạn.**
+
+Mỗi lần máy ngủ hoặc Docker khởi động lại, `emailservice` rơi vào vòng lặp chết với thông báo:
+
+```
+Liveness probe failed: timeout: failed to connect service "10.244.0.x:8080" within 1s
+```
+
+Hậu quả là **mọi snapshot nền đều bẩn** vì `checkoutservice -> emailservice` báo 100% lỗi, và không tiêm được kịch bản nào.
+
+Tớ đoán sai hai lần trước khi ra đúng:
+
+1. Đoán đầu: thiếu CPU, giống hệt ca `recommendationservice` trước đó. Đo lại: node dùng **9% CPU, 53% RAM** — không hề thiếu.
+2. Đoán thứ hai: service khởi động chậm. Đọc log container: `listening on port: 8080` chỉ 0.2 giây sau khi chạy — ứng dụng sống và sẵn sàng.
+
+Sự thật nằm ở chữ **connect**: kubelet không mở nổi kết nối trong 1 giây, chứ không phải service trả lời chậm. Hạn 1 giây của bản gốc Google quá chặt với service Python chạy trong kind trên WSL, nhất là ngay sau khi sandbox mạng của pod vừa được dựng lại.
+
+Sửa: `infra/emailservice-probe-patch.yaml` nới `timeoutSeconds` từ 1 lên 5 và `failureThreshold` từ 3 lên 5. Pod mới chạy ổn định, 0 lần khởi động lại.
+
+**Cố ý chỉ nới riêng `emailservice`.** `recommendationservice` cũng từng CrashLoopBackOff vì lý do gần giống, nhưng ở đó là tranh CPU thật và hạn chặt là một phần của hiện tượng đang nghiên cứu. Không kịch bản lỗi nào phụ thuộc vào hạn thăm dò của `emailservice` — F4 chỉ tác động lên `frontend` và `productcatalogservice` — nên nới ở đây an toàn.
+
+Bài học chung của cả ba lần đoán: **đọc log của chính container trước khi đổ lỗi cho tài nguyên.** Log nói ứng dụng sống thì vấn đề nằm ở tầng giữa ứng dụng và kubelet, không nằm trong ứng dụng.
+
+**Bước 4.1 — manifest bản gọn cho twin.**
+
+`infra/twin/manifests.yaml` sinh ra từ `release/kubernetes-manifests.yaml`, bỏ 4 khối: `adservice`, `recommendationservice`, `loadgenerator`, và `frontend-external`. Còn lại **9 Deployment và 9 Service** — kế hoạch ban đầu tớ ghi 8, đó là do quên đếm `redis-cart`.
+
+Bỏ `frontend-external` vì nó kiểu `LoadBalancer`, mà kind không cấp được IP ngoài nên nó nằm mãi ở trạng thái chờ và chỉ làm rối `kubectl get svc -n twin`.
+
+Giữ `currencyservice`, `shippingservice`, `emailservice` dù chúng không nằm trên đường đi ngắn nhất: `checkoutservice` bắt buộc phải có đủ 6 địa chỉ mới khởi động được, thiếu một cái là gãy luồng đặt hàng — mà đó đúng là luồng cần đo.
+
+`infra/twin/kustomization.yaml` giải hai chỗ vướng đã lường trước:
+
+1. **Địa chỉ collector phải là tên đầy đủ** `opentelemetrycollector.default.svc.cluster.local:4317`. Tên ngắn chỉ phân giải trong cùng namespace. Đây là kiểu hỏng nguy hiểm vì twin vẫn **chạy bình thường**, chỉ là không đo được gì — nhìn bên ngoài mọi thứ đều xanh.
+2. **Tên service trong trace mang tiền tố `twin-`.** Không có tiền tố thì twin và production cùng tên trong Prometheus, mà cửa sổ quan sát rộng 5 phút nên số liệu hai bên trộn vào nhau ngay sau khi dựng twin. Có tiền tố thì tách bằng truy vấn, không phải ngồi chờ hết cửa sổ.
+
+**Vấp lại giới hạn của kustomize đã gặp ở phase 0:** không cho tham chiếu file nằm ngoài thư mục gốc của kustomization. Phải chuyển `twin-manifests.yaml` vào thành `infra/twin/manifests.yaml`.
+
+**Bước 4.2 — `twin_manager.py`.**
+
+Ba hàm `create_twin`, `load_state`, `destroy_twin`, cộng `status` và `wait_ready`.
+
+Hai chi tiết đáng ghi:
+
+- **`destroy_twin` chờ namespace biến mất hẳn, không chỉ chờ lệnh trả về.** Kubernetes xóa namespace bất đồng bộ: lệnh trả về ngay nhưng pod còn sống thêm hàng chục giây, và RAM chỉ thực sự được trả lại khi pod cuối cùng chết. Dựng twin mới lúc twin cũ chưa chết hẳn là cách chắc chắn nhất để hết RAM.
+- **`create_twin` kiểm tra RAM trước khi dựng** và từ chối nếu node còn dưới 700 MiB. Dựng khi thiếu RAM thì pod bị OOMKilled và có thể kéo theo cả pod của production, tức là hỏng luôn thứ đang muốn quan sát.
+
+**`load_state` tồn tại vì twin dựng từ manifest nên mang cấu hình MẶC ĐỊNH**, còn production tại thời điểm sự cố có thể đã khác. Thử hành động trên bản sao không giống production thì kết quả đo được không nói lên điều gì. Nó chỉ đụng vào deployment có mặt ở cả hai bên — twin thiếu `adservice` và `recommendationservice` nên phải bỏ qua, nếu không thì lỗi giữa chừng và twin nạp trạng thái nửa vời.
+
+**Đo RAM thật:** node còn trống **2826 MiB**, ngưỡng cần 700. Cảnh báo RAM ban đầu của tớ dựa trên số của Windows (còn 1.7 GB trống) là nhìn nhầm tầng — thứ quyết định pod sống chết là RAM bên trong node kind, không phải RAM còn lại của Windows.
+
+**Bước 4.3 — bộ sinh tải riêng cho twin.**
+
+`twin_loadgen.py` chạy từ Windows qua `kubectl port-forward`, không dựng thêm pod nào. Lý do không dùng `loadgenerator` gốc: nó là một Deployment chạy Locust, tốn thêm khoảng 50 MiB và một pod, mà twin chỉ cần đủ tải để sinh trace.
+
+Lý do bắt buộc phải dùng port-forward: **kind không thêm được cổng sau khi tạo cluster**, 5 cổng đã cố định từ đầu và không còn cổng trống cho frontend của twin.
+
+**Tỉ lệ tác vụ giữ đúng bản chính** (index 1, setCurrency 2, browseProduct 10, addToCart 2, viewCart 3, checkout 1), đã kiểm chứng bằng 19000 lần bốc ngẫu nhiên. Đây là điều kiện bắt buộc để so sánh twin với production: hai bên phải chịu cùng hình dạng tải, nếu không thì chênh lệch đo được không biết là do hành động hay do tải khác nhau.
+
+`PortForward` chờ **tới khi gọi thật được**, không chờ một khoảng cố định và cũng không bám vào dòng log `Forwarding from...` — dòng đó in ra trước khi cổng thực sự nhận kết nối.
+
+**Bước 4.4 — `verifier.py`.**
+
+Trả phán quyết `better` / `worse` / `no_change` kèm số liệu từng service. Ba quyết định thiết kế:
+
+1. **Chỉ nhìn 5 service trên luồng nghiệp vụ chính, không lấy trung bình toàn hệ thống.** Trung bình bị `productcatalogservice` áp đảo vì lưu lượng của nó gấp nhiều lần — số đo thật ở S5: 13.56 req/s so với 0.11 req/s của `checkoutservice`. Một hành động phá hỏng hẳn luồng đặt hàng vẫn có thể làm trung bình đẹp lên.
+2. **Ngưỡng thay đổi tối thiểu 2 điểm phần trăm lỗi và 15% p95.** Không có ngưỡng thì mọi phép đo đều ra `better` hoặc `worse` do nhiễu tự nhiên. Phase 2 đo được p95 dao động vài phần trăm giữa hai lần chụp liên tiếp trên hệ thống hoàn toàn khỏe.
+3. **Tỉ lệ lỗi thắng tuyệt đối so với độ trễ.** Hành động làm hệ thống nhanh hơn nhưng lỗi nhiều hơn bị phán là `worse`: chậm thì người dùng phải chờ, lỗi thì đơn hàng mất hẳn.
+
+**`no_change` KHÔNG được coi là an toàn để đưa lên production.** Hành động không cải thiện gì mà vẫn thi hành thì chỉ thêm rủi ro — đây chính là chỉ số "wasted action count" ở mục 8 KLTN.md.
+
+Đã kiểm chứng bốn trường hợp bằng số liệu giả, gồm ca khó nhất là nhanh hơn nhưng lỗi nhiều hơn, phán quyết đều đúng.
+
+
+**Bước 4.5 — đo twin fidelity.**
+
+`scripts/twin_fidelity.py`. Đây là chỉ số 7 mục 8 KLTN.md, trả lời câu hỏi: **có đáng tin twin không.** Nếu twin nói một hành động "tốt lên" mà production lại "xấu đi" thì cả kiến trúc twin-verified sụp đổ, vì agent sẽ tin nhầm.
+
+**Quyết định thiết kế quan trọng nhất: phải thử CẢ hành động sai.**
+
+Nếu chỉ thử hành động đúng thì fidelity **luôn ra 100% một cách vô nghĩa** — hành động đúng chính là phép nghịch đảo của lỗi, cả hai môi trường đều khỏi và đều báo `better`. Phép đo chỉ có ý nghĩa khi twin phải **phân biệt** được hành động tốt với hành động vô ích. Nên mỗi kịch bản thử hai hành động:
+
+```
+S1  dung: rollback          go bo EXTRA_LATENCY
+    sai : scale_up          them ban sao khong go duoc do tre chen moi lan goi
+S4  dung: adjust_resources  tra tran CPU ve muc cu
+    sai : restart_pod       pod moi van mang dung tran CPU cu
+S5  dung: adjust_resources
+    sai : restart_pod
+```
+
+Fidelity = số lần twin và production ra **cùng một phán quyết**, chia cho tổng số lần thử.
+
+**Loại S2 và S3 khỏi phép đo fidelity, có chủ đích:**
+
+- S2 hạ số bản sao về 0. Hành động sai nào cũng ra "không đổi" vì service vẫn chết, phép đo không phân biệt được gì.
+- S3 xóa pod. Kubernetes tự tạo lại trước khi đo xong, không còn gì để sửa.
+
+**Một lỗi phải sửa trong chính verifier.** `measure()` lọc theo tiền tố `twin-`, nên gọi cho production sẽ trả về rỗng. Đã thêm tham số `prefix` để **một lớp đo được cả hai bên**. Đây là điều bắt buộc chứ không phải tiện tay: fidelity là phép so sánh hai môi trường, mà đo bằng hai bộ code khác nhau thì không còn biết chênh lệch đến từ hệ thống hay đến từ code đo.
+
+**Thời gian:** mỗi lần thử khoảng 11 phút (chờ 330 giây sau khi tiêm, 300 giây sau khi chạy hành động). Mỗi kịch bản 4 lần thử, khoảng 50 phút. Cả 3 kịch bản gần 2 tiếng rưỡi.
+
+**Lỗi quy trình tớ tự gây ra, ghi lại để không lặp.** Tớ dựng twin trong lúc S5 đang trong cửa sổ đo, đúng cái điều mình vừa dặn không được làm. Twin tồn tại khoảng 30 giây bên trong cửa sổ 5 phút của S5 rồi bị xóa. Bài học đưa vào quy trình: **trước khi dựng twin, luôn kiểm tra `python scripts/inject.py --status`** — có lỗi đang tiêm nghĩa là đang có phép đo dở dang.
+
+**Lần dựng twin đầu tiên hỏng, và hỏng đúng ở chỗ đã sửa cho production.**
+
+8/9 pod sẵn sàng, riêng `emailservice` CrashLoopBackOff — đúng lỗi hạn thăm dò 1 giây đã sửa ở bước 4.0. Nguyên nhân: `infra/twin/manifests.yaml` chép từ `release/` nên **không mang bản vá** đặt trong `infra/kustomization.yaml`.
+
+Bài học đưa vào báo cáo: **mọi bản vá sửa lỗi của upstream đều phải áp cho cả hai môi trường.** Không áp thì twin và production khác nhau ở đúng chỗ đã từng gây sự cố — mà giống nhau lại chính là điều kiện để con số fidelity có nghĩa. Đã lặp bản vá vào `infra/twin/kustomization.yaml` kèm chú thích giải thích vì sao phải lặp.
+
+**Số đo thật của twin:**
+
+```
+9/9 pod san sang, RAM 169 MiB
+RAM node con trong sau khi dung twin: 2320 MiB
+117 request trong 132s, loi 7.7%, DAT DUOC 5 DON HANG
+```
+
+169 MiB nhẹ hơn nhiều so với dự trù 3.8 GB ở mục 2 KLTN.md. Đặt được đơn hàng trong twin chính là tiêu chí thành công của phase 4.
+
+**Lỗi nghiêm trọng thứ hai: số liệu twin và production trộn vào nhau mà không có dấu hiệu gì báo.**
+
+Đo lần đầu chỉ thấy 6 service, thiếu `cartservice` và `shippingservice` — mà `cartservice` nằm trong danh sách service quyết định phán quyết. Truy ra thì lộ một lỗi lớn hơn hẳn.
+
+Hai nguồn số liệu đặt tên theo hai quy ước khác nhau:
+
+- `red_metrics()` đo phía server, lấy thẳng nhãn `service_name`, nên **có** tiền tố `twin-`
+- `red_metrics_observed()` đo gián tiếp từ phía người gọi, suy tên ra từ `endpoint_map`, nên **không** có tiền tố
+
+Hậu quả: bộ lọc theo tiền tố loại mất toàn bộ nguồn thứ hai. Và tệ hơn nhiều — nguồn thứ hai **không lọc theo người gọi**, nên `cartservice` của twin và của production dồn vào cùng một khóa. Số liệu hai môi trường trộn vào nhau, không một dấu hiệu nào báo.
+
+Với thí nghiệm fidelity thì đây là kiểu hỏng **làm hỏng luôn kết luận**: fidelity vốn là phép so sánh hai môi trường, mà số liệu hai bên đã trộn thì so cái gì cũng vô nghĩa, và con số vẫn ra đẹp như thường.
+
+Sửa: thêm tham số `caller_prefix` lọc theo tên người gọi (`twin-` lấy riêng twin, `""` loại hết span mang tiền tố twin), và gắn tiền tố vào tên của nguồn gián tiếp cho khớp nguồn phía server. Kiểm chứng sau khi sửa:
+
+```
+twin        cartservice 0.43 req/s
+production  cartservice 2.59 req/s
+```
+
+Bài học chung: **hai nguồn dữ liệu về cùng một thứ mà đặt tên theo hai quy ước là một quả mìn hẹn giờ.** Nó chỉ nổ khi có môi trường thứ hai, tức là muộn hơn hẳn lúc viết code, và nó nổ **im lặng** — không ngoại lệ, không cảnh báo, chỉ có số sai.
+
+**Một chênh lệch cố định giữa twin và production, có chủ đích.** Twin hiện `adservice` và `recommendationservice` trong số liệu dù đã gỡ khỏi manifest, vì `frontend` vẫn gọi chúng và gọi hỏng. Mục 4 KLTN.md đã quyết gỡ hai service này để tiết kiệm RAM. Chênh lệch này **không nằm trên luồng nghiệp vụ chính** và fidelity so **chiều thay đổi** chứ không so giá trị tuyệt đối, nên nó không lật được phán quyết — đây đúng là lý do so delta tốt hơn so giá trị tuyệt đối.
+
+**KẾT QUẢ TWIN FIDELITY S4: 50% (1/2 lần khớp).**
+
+```
+S4 dung  adjust_resources   twin=no_change  production=no_change  KHOP
+S4 sai   restart_pod        twin=worse      production=no_change  LECH
+```
+
+**Con số 50% này còn tệ hơn vẻ ngoài của nó, và phải viết vào báo cáo đúng như vậy: lần "khớp" kia khớp vì CẢ HAI ĐỀU SAI.**
+
+`adjust_resources` chính là phép trả trần CPU về mức cũ, tức là gỡ hẳn nguyên nhân. Đáng ra phải ra `better` ở cả hai môi trường. Ra `no_change` ở cả hai nghĩa là **verifier không nhận ra một cải thiện có thật** — vấn đề nằm ở thước đo, không nằm ở twin.
+
+Lý do nằm ngay trong câu giải thích của phán quyết production:
+
+```
+vua nhanh len o frontend, cartservice
+vua cham di o checkoutservice, paymentservice
+khong ben nao thang ro
+```
+
+`checkoutservice` và `paymentservice` chạy **0.08 req/s**, tức khoảng 24 request trong cửa sổ 5 phút. p95 tính trên 24 mẫu nhảy loạn, và nhiễu đó đủ sức lật phán quyết của cả hệ thống.
+
+**Sửa: thêm ngưỡng lưu lượng tối thiểu `MIN_RATE_FOR_VERDICT = 0.3` req/s** (khoảng 90 request mỗi cửa sổ). Service dưới ngưỡng vẫn được in ra cho người đọc thấy, nhưng **không được bỏ phiếu**. Kiểm chứng lại bằng đúng mẫu số liệu của production: phán quyết chuyển từ `no_change` sang `better`.
+
+Nguyên tắc rút ra, áp dụng được cho mọi hệ đo lường: **"không đủ cơ sở để kết luận" và "không có thay đổi" là hai chuyện khác nhau**, gộp chung lại thì phán quyết sai. Đây đúng là cùng một họ với lỗi ở phase 3 khi prompt in "no service is close to its CPU limit" trong lúc thật ra chưa đo được gì.
+
+**~~Chỗ lệch thật giữa twin và production~~ — ĐÍNH CHÍNH, kết luận này không có cơ sở.**
+
+Ban đầu tớ ghi: `restart_pod` làm twin báo `worse` còn production báo `no_change`, và giải thích là "twin tải nhẹ hơn nên phản ứng mạnh hơn với sự cố ngắn hạn — hạn chế thật của twin".
+
+Sai. Lúc đó twin chạy **3 người dùng ảo** còn production chạy **10**, nên chênh lệch hoàn toàn có thể chỉ đến từ tải khác nhau. Đó là **lỗi đo đạc của tớ, không phải tính chất của twin**. Xem mục lỗi thiết kế về tải ở dưới. Phải chạy lại với tải khớp mới được phép kết luận bất cứ điều gì về hạn chế của twin.
+
+**Con số 50% đo TRƯỚC khi sửa verifier, nên chưa phải con số cuối.** Phải chạy lại sau khi có ngưỡng lưu lượng. Ghi lại cả hai con số trong báo cáo và giải thích vì sao chúng khác nhau — đó là một ví dụ tốt cho thấy **thước đo hỏng thì kết luận hỏng theo, dù hệ thống được đo vẫn tốt**.
+
+**CỔNG CHẶN PHASE 4 ĐẠT: 3 vòng dựng–đo–xóa liên tiếp, máy không hết RAM.**
+
+```
+RAM trong luc bat dau : 2623 MiB
+RAM trong luc ket thuc: 2387 MiB
+moi vong: dung 34s, xoa 13s
+```
+
+Dựng 34 giây và xóa 13 giây, giống hệt nhau qua cả 3 vòng — twin dựng lại được **nhanh và ổn định**, đủ để vòng lặp ReAct ở phase 5 dùng twin như sân tập thật chứ không phải thứ dựng một lần rồi để đó.
+
+**Lệch 236 MiB giữa đầu và cuối, và tớ KHÔNG kết luận đó là rò rỉ.** Bằng chứng: các con số từng vòng nhảy loạn, có vòng ghi `twin an them: -22 MiB` — tức RAM trống *tăng* sau khi dựng twin, điều không thể xảy ra nếu phép đo tức thời. Nguyên nhân là `kubectl top node` lấy mẫu theo chu kỳ khoảng 30 giây và có tính cả bộ nhớ đệm đĩa, nên chênh lệch trong một vòng 47 giây phần lớn là độ trễ đo đạc.
+
+Bài học về đo lường, cùng họ với hai bài học trước trong phase này: **đừng đọc một phép đo có độ trễ như thể nó tức thời.** Muốn kết luận rò rỉ thì phải chờ metric ổn định rồi mới đo, hoặc chạy nhiều vòng hơn và nhìn xu hướng, không nhìn từng vòng.
+
+**Số đo RAM thật của twin, dùng cho phần tài nguyên trong báo cáo:**
+
+```
+9 pod, 169-306 MiB tuy thoi diem do
+du tru ban dau o muc 2 KLTN.md: 3.8 GB
+```
+
+Nhẹ hơn dự trù hơn 10 lần. Nguyên nhân: dự trù ban đầu ước theo *giới hạn* khai báo trong manifest, còn số này là RAM *đang dùng* thật. Với hệ thống chủ yếu nằm chờ như Online Boutique, hai con số cách nhau rất xa.
+
+**LỖI THIẾT KẾ NẶNG NHẤT CỦA PHASE 4: twin và production chịu tải khác nhau.**
+
+Phát hiện khi chạy loạt fidelity đầy đủ. Lần thử đầu tiên (S1 trên twin) trả về:
+
+```
+PHAN QUYET: NO_CHANGE — moi service deu duoi 0.3 req/s
+(frontend, productcatalogservice, cartservice, checkoutservice, paymentservice)
+khong du mau de ket luan
+```
+
+Truy ra: **twin chạy 0.67 req/s trong khi production chạy 2.93 req/s.** Tớ đặt 3 người dùng ảo cho twin với lý lẽ "đủ để mọi cạnh có lưu lượng mà không làm twin nghẹt", còn `loadgenerator` của production đặt `USERS=10`. Tớ cũng rút thời gian chờ giữa hai tác vụ xuống 0.5–3 giây trong khi bản chính dùng 1–10 giây.
+
+Hai hậu quả, hậu quả thứ hai nguy hiểm hơn nhiều:
+
+1. S1 chèn độ trễ 6 giây làm lưu lượng twin sụp dưới ngưỡng, verifier không còn đủ mẫu. Cứ để chạy tiếp thì 11 lần thử còn lại đều ra `no_change` — 2 tiếng rưỡi cho một bảng vô nghĩa.
+2. **Nó làm sai lệch chính kết luận về twin.** Ở loạt S4 trước, `restart_pod` làm twin báo `worse` còn production báo `no_change`, và tớ đã ghi đó là "hạn chế của twin: tải nhẹ nên phản ứng mạnh hơn với sự cố ngắn hạn". Kết luận đó **không có cơ sở** — chênh lệch có thể đến hoàn toàn từ tải khác nhau, tức là tớ đã đo nhầm thứ cần đo.
+
+Sửa: 10 người dùng ảo và thời gian chờ 1–10 giây, **đúng bằng cấu hình production**.
+
+Nguyên tắc rút ra, đáng đưa vào chương phương pháp: **so sánh hai môi trường thì mọi biến ngoài biến đang khảo sát đều phải khớp theo CẤU HÌNH, không phải theo cảm giác "đủ dùng".** Tớ đã cẩn thận khớp tỉ lệ tác vụ (index 1, browseProduct 10, checkout 1...) nhưng lại tự ý đổi số người dùng và thời gian chờ — khớp một nửa còn nguy hiểm hơn không khớp gì, vì nó tạo cảm giác đã kiểm soát.
+
+**Chấm điểm lại loạt S4 cũ bằng verifier đã sửa** (`scripts/rescore_fidelity.py`, không đụng tới cluster vì file kết quả đã lưu đủ số liệu thô):
+
+```
+                          cu          moi
+production adjust_resources  no_change -> better    DOI
+production restart_pod       no_change -> worse     DOI
+twin       ca hai            no_change -> no_change
+```
+
+**Phía production giờ cho phán quyết đúng hoàn toàn.** `adjust_resources` gỡ hẳn nguyên nhân nên phải là `better`; `restart_pod` khởi động lại pod trong lúc vẫn bị bóp CPU nên phải là `worse`. Trước khi sửa, cả hai bị nhiễu từ hai service 0.08 req/s dìm xuống `no_change`. Đây là **bằng chứng bản sửa verifier hoạt động đúng**.
+
+Phía twin vẫn `no_change` cả hai vì lưu lượng 0.2 req/s dưới ngưỡng. Fidelity chấm lại ra 0%, nhưng **con số đó nói về tải của twin chứ không nói về twin**.
+
+Bài học về công cụ: `Verdict` lưu cả `deltas` chứ không chỉ lưu kết luận, nên chấm lại được ngay khi ngưỡng thay đổi mà không mất hàng giờ chạy lại. **Kết luận phụ thuộc vào ngưỡng, mà ngưỡng còn đổi; số liệu thô thì không đổi.** Mọi thí nghiệm nên lưu số liệu thô, không chỉ lưu kết luận.
+
+Ranh giới của mẹo này cũng phải nói rõ: **chấm lại chỉ sửa được lỗi của THƯỚC ĐO, không sửa được lỗi của PHÉP ĐO.** Phần twin chạy sai tải thì bắt buộc phải chạy lại trên cluster.
+
+**Sửa lần một chưa đủ: nâng tải lên 10 người dùng thì port-forward sập.**
+
+Sau khi khớp tải với production, đo lại ngay thì ra kết quả tệ hơn hẳn:
+
+```
+3 nguoi dung  qua port-forward:   7.0% loi
+10 nguoi dung qua port-forward:  53.7% loi, 117/218 request DUT KET NOI (ma 0)
+twin do duoc: frontend 0.20 req/s, moi service con lai 0.00 req/s
+```
+
+Mã trạng thái 0 nghĩa là đứt kết nối chứ không phải server trả lỗi. `kubectl port-forward` là một tiến trình đơn ghép kênh qua một kết nối duy nhất, không chịu nổi 10 luồng song song.
+
+**Và nó kéo theo một vấn đề nặng hơn cả chuyện sập**, thứ tớ đáng ra phải thấy từ đầu: đẩy tải từ Windows qua đường hầm **cộng thêm độ trễ mà production không có**, vì production sinh tải từ bên trong cluster. Ngay cả ở 3 người dùng lúc đường hầm còn chạy được, số đo hai bên vẫn không thực sự so sánh được — chỉ là sai ít nên không lộ.
+
+Sửa dứt điểm: **dựng bộ sinh tải bên trong namespace twin**, dùng đúng Deployment, đúng ConfigMap locustfile, đúng `USERS=10` và `RATE=1` của production. Twin lên 10 deployment.
+
+**Đây là lần thứ hai trong phase này tớ đánh đổi sai theo cùng một kiểu.** Ban đầu tớ loại phương án loadgen trong cluster để tiết kiệm 50 MiB RAM, với lý lẽ "mục 2 KLTN.md đã chốt RAM là nút thắt lớn nhất". Lý lẽ đó nghe rất đúng nhưng sai ở chỗ: RAM **chưa bao giờ là ràng buộc thật** trong phase này — đo được node còn trống 2.3 GB, twin chỉ ăn 169–306 MiB. Còn cái đánh đổi đi là **tính so sánh được của phép đo**, tức là chính thứ mà cả thí nghiệm fidelity dựa vào.
+
+Bài học đưa vào báo cáo: **một ràng buộc đã ghi trong tài liệu thiết kế vẫn phải kiểm chứng lại bằng số đo trước khi dùng nó để đánh đổi.** Ràng buộc RAM là thật ở giai đoạn lập kế hoạch, khi mới chỉ có ước lượng 3.8 GB. Đến lúc đo thật thì nó không còn là ràng buộc nữa, nhưng tớ vẫn tiếp tục ra quyết định dựa trên nó.
+
+`twin_loadgen.py` giữ lại làm công cụ thử nhanh bằng tay (`scripts/twin.py --load`), **không dùng cho phép đo**.
+
+**ĐẢO LẠI QUYẾT ĐỊNH MỤC 4 KLTN.md: twin giữ đủ 11 service, không gỡ bớt.**
+
+Sau khi có bộ sinh tải trong cluster, đo lại thì tải khớp gần như hoàn hảo:
+
+```
+              twin      production
+frontend      2.79        2.93 req/s
+cartservice   2.51        2.59 req/s
+```
+
+Nhưng chính phép đo đó lộ ra một chênh lệch chưa lường, và nó đánh trúng 2 trên 3 kịch bản fidelity:
+
+```
+productcatalogservice   twin 2.94   production 14.45 req/s
+```
+
+Gấp 5 lần. Nguyên nhân: production có `recommendationservice` cũng gọi `productcatalogservice`, twin thì đã gỡ service đó. Mà `productcatalogservice` chính là mục tiêu của S1 và S5. **Bóp CPU một service đang chịu 2.94 req/s là tình huống khác hẳn bóp một service chịu 14.45 req/s** — con số fidelity đo ra sẽ nói về một tình huống không tồn tại trong production.
+
+Kèm theo, `adservice` và `recommendationservice` báo **100% lỗi cố định** trong mọi phép đo của twin vì chúng không tồn tại. `frontend` xử lý êm nên luồng chính không gãy, nhưng đó vẫn là hai cạnh khác biệt vĩnh viễn.
+
+RAM đo thật của hai service bị gỡ:
+
+```
+adservice             105 MiB
+recommendationservice  39 MiB
+node con trong       2270 MiB
+```
+
+Đã đưa cả hai trở lại. Twin giờ có **12 deployment** (đủ 11 service cộng bộ sinh tải), chỉ khác production một chỗ: `frontend` không mở LoadBalancer vì kind không cấp được IP ngoài.
+
+**Đây là lần thứ ba trong phase 4 tớ phải đảo một quyết định "tiết kiệm RAM".** Ba lần đó là: gỡ `loadgenerator`, đặt 3 người dùng ảo thay vì 10, gỡ `adservice` với `recommendationservice`. Cả ba đều nấp sau cùng một lý lẽ — mục 2 KLTN.md chốt RAM là nút thắt lớn nhất — và cả ba đều sai vì cùng một lý do: **ràng buộc đó đúng lúc lập kế hoạch với ước lượng 3.8 GB, nhưng đo thật thì twin đầy đủ chỉ ăn khoảng 300 MiB trên 2.3 GB đang trống.**
+
+Nguyên tắc viết vào chương phương pháp: **một ràng buộc đã ghi trong tài liệu thiết kế vẫn phải kiểm chứng lại bằng số đo trước khi dùng nó để đánh đổi.** Trích dẫn tài liệu của chính mình nghe rất thuyết phục, và đó chính là chỗ nguy hiểm — nó làm quyết định sai trông như quyết định có căn cứ.
+
+Cái bị đánh đổi cả ba lần đều là **tính so sánh được của phép đo**, tức là chính thứ mà thí nghiệm fidelity dựa vào. Đổi lấy vài chục MiB RAM không thiếu.
+
+**Trạng thái phase 4 khi dừng phiên:** mọi thứ đã sẵn sàng, hệ thống sạch, twin đã xóa. Còn đúng một việc — chạy `python scripts/twin_fidelity.py --scenarios S1,S4,S5` (khoảng 2 tiếng rưỡi) để có con số fidelity dùng được cho báo cáo.
+
+**Loạt fidelity đầy đủ — phần TWIN (6/6 lần thử, ngày 2026-08-24).**
+
+Chạy sau khi sửa xong ba lỗi đo đạc: tải khớp production, bộ sinh tải trong cluster, twin đủ 11 service.
+
+Xác nhận tải đã khớp ngay ở bước đầu:
+
+```
+twin co luu luong tren 10 service, frontend 2.72 req/s   (production 2.93)
+```
+
+So với lần chạy hỏng hôm trước — chỉ 6 service và 0.20 req/s.
+
+```
+S1 dung  rollback          better
+S1 sai   scale_up          no_change
+S4 dung  adjust_resources  better
+S4 sai   restart_pod       worse
+S5 dung  adjust_resources  better
+S5 sai   restart_pod       no_change
+```
+
+**Cả sáu phán quyết đều hợp lý.** Ba hành động đúng đều ra `better`. Ba hành động sai đều **không** ra `better` — hai `no_change` và một `worse`.
+
+Xét riêng vai trò "sân tập" thì đây là tính chất quan trọng nhất của twin: **nó không bao giờ bật đèn xanh cho một hành động vô ích.** Vì `is_safe_to_promote` chỉ đúng khi phán quyết là `better`, tính chất này nghĩa là agent ở phase 5 sẽ không đưa hành động sai nào lên production trong ba kịch bản đã thử.
+
+**Bằng chứng mạnh nhất cho bản sửa ngưỡng lưu lượng:** lần thử `S4 / adjust_resources` hôm qua ra `no_change`, hôm nay ra `better`. Cùng kịch bản, cùng hành động, chỉ khác ngưỡng `MIN_RATE_FOR_VERDICT`. Trước đó tớ mới chỉ chấm điểm lại số liệu cũ để chứng minh bản sửa đúng; lần này nó được kiểm chứng trên **dữ liệu chạy thật** — hai mức bằng chứng khác nhau và mức sau mạnh hơn hẳn.
+
+Giải thích từng phán quyết, để đối chiếu khi viết báo cáo:
+
+- `S1 rollback` → `better`: gỡ biến `EXTRA_LATENCY`, độ trễ biến mất hoàn toàn.
+- `S1 scale_up` → `no_change`: độ trễ 6 giây được chèn vào **mỗi lần gọi**, nên hai bản sao thì mỗi lần gọi vẫn chậm đúng 6 giây. Thêm bản sao chỉ cứu được service đang quá tải.
+- `S4 adjust_resources` → `better`: trả trần CPU về mức cũ, gỡ hẳn nguyên nhân.
+- `S4 restart_pod` → `worse`: pod mới vẫn mang đúng trần CPU 10m, lại phải khởi động lại từ đầu dưới trần đó, nên còn tệ hơn để yên.
+- `S5 adjust_resources` → `better`: như S4.
+- `S5 restart_pod` → `no_change`: giống S4 về bản chất nhưng `productcatalogservice` nhẹ hơn `frontend` nên cú sốc khởi động lại không đủ vượt ngưỡng.
+
+**TWIN FIDELITY = 100% (6/6 lần khớp).** Đây là chỉ số 7 mục 8 KLTN.md.
+
+```
+S1 dung  rollback           twin=better     production=better     KHOP
+S1 sai   scale_up           twin=no_change  production=no_change  KHOP
+S4 dung  adjust_resources   twin=better     production=better     KHOP
+S4 sai   restart_pod        twin=worse      production=worse      KHOP
+S5 dung  adjust_resources   twin=better     production=better     KHOP
+S5 sai   restart_pod        twin=no_change  production=no_change  KHOP
+```
+
+Kết quả thô: `data/fidelity/20260824-113038_fidelity.json`.
+
+**Trùng khớp còn chặt hơn mức chỉ số đòi hỏi.** Chỉ số fidelity chỉ so kết luận cuối, nhưng twin và production còn khớp cả **danh sách service tốt lên**: S1 cùng ra `frontend, productcatalogservice`, S4 cùng ra `frontend, cartservice`. Không chỉ kết luận giống nhau mà đường đi tới kết luận cũng giống nhau.
+
+**Ý nghĩa cho giả thuyết trung tâm của đề tài.** Mục 1 KLTN.md đặt giả thuyết cần chứng minh bằng số: *agent-có-twin gây ít hành động sai hơn agent-sửa-trực-tiếp*. Con số 100% nói rằng **twin là nguồn tin đáng dùng** — nó không nói dối agent về hậu quả của hành động. Cộng với tính chất đo được ở phần twin — ba hành động sai đều không ra `better`, mà `is_safe_to_promote` chỉ đúng khi `better` — thì trong ba kịch bản này agent sẽ **không đưa hành động sai nào lên production**.
+
+**PHẢI GHI RÕ HAI GIỚI HẠN, đừng để con số 100% bị đọc quá lời:**
+
+1. **Chỉ 6 lần thử trên 3 kịch bản.** 100% trên 6 mẫu không phải 100% nói chung. Với 6 phép thử nhị phân, ngay cả một twin chỉ đúng 80% vẫn có khoảng 26% khả năng khớp trọn 6 lần do may. Muốn kết luận mạnh hơn thì phải nhiều kịch bản và nhiều lần lặp hơn — đó là việc của phase 6.
+2. **Ba kịch bản này đều là lỗi TĨNH và cục bộ** — một biến môi trường, một trần CPU — nên twin tái hiện dễ. Chưa thử lỗi phụ thuộc trạng thái tích lũy (rò rỉ bộ nhớ, hàng đợi đầy dần) hay lỗi phụ thuộc thời điểm. Đó mới là chỗ twin dễ lệch nhất, và đề tài này chưa chạm tới.
+
+**So sánh với loạt chạy hỏng hôm trước, để thấy ba lỗi đo đạc nặng đến mức nào:**
+
+```
+loat hong (twin 3 nguoi dung, do qua port-forward):  fidelity 50%
+loat dung (tai khop, loadgen trong cluster, du 11 service):  fidelity 100%
+```
+
+Cùng bộ code, cùng kịch bản, cùng hệ thống. Khác biệt duy nhất là ba lỗi đo đạc đã sửa. Và tệ hơn con số 50%: lần khớp duy nhất của loạt hỏng khớp vì **cả hai môi trường đều sai giống nhau**.
+
+**Đây là bài học đáng giá nhất của cả phase 4, và nên đưa vào chương phương pháp:** một hệ đo lường hỏng không báo lỗi, không ném ngoại lệ, không để lại dấu vết nào. Nó chỉ lặng lẽ cho ra những con số trông hoàn toàn hợp lý. Nếu tớ dừng lại ở loạt đầu tiên, báo cáo sẽ ghi "twin fidelity 50%, twin phản ứng mạnh hơn với sự cố ngắn hạn" — một kết luận nghe rất khoa học, có số liệu hậu thuẫn, và **hoàn toàn sai**.
 
 ### Phase 5 — ReAct loop
 

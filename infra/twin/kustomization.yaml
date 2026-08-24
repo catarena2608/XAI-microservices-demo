@@ -1,0 +1,199 @@
+# Digital Twin — bản sao chạy thật của Online Boutique ở namespace riêng.
+# Chạy: kubectl apply -k infra/twin/
+#
+# HAI CHỖ BẮT BUỘC KHÁC VỚI BẢN CHÍNH, thiếu một trong hai là twin vô dụng:
+#
+# 1. Địa chỉ collector phải là TÊN ĐẦY ĐỦ.
+#    Tên ngắn "opentelemetrycollector:4317" chỉ phân giải được trong cùng namespace.
+#    Pod ở namespace twin gọi tên ngắn sẽ không tìm ra collector đang nằm ở default,
+#    và hậu quả là twin CHẠY BÌNH THƯỜNG NHƯNG KHÔNG ĐO ĐƯỢC GÌ — kiểu hỏng dễ mất
+#    cả buổi vì nhìn bên ngoài mọi thứ đều xanh.
+#
+# 2. Tên service trong trace phải mang tiền tố "twin-".
+#    Không có tiền tố thì twin và production cùng tên "frontend", "checkoutservice"
+#    trong Prometheus, mà cửa sổ quan sát rộng 5 phút nên số liệu hai bên trộn vào
+#    nhau ngay sau khi dựng twin. Có tiền tố thì tách được bằng truy vấn, không phải
+#    ngồi chờ hết cửa sổ.
+#
+# Twin dùng chung collector và Jaeger với bản chính. Cố ý: dựng thêm một bộ quan sát
+# riêng cho twin tốn thêm RAM, mà mục 2 KLTN.md đã chốt RAM là nút thắt lớn nhất.
+#
+# manifests.yaml PHẢI nằm trong chính thư mục này: kustomize từ chối mọi tham chiếu
+# tới file nằm ngoài thư mục gốc của kustomization, vì lý do an toàn.
+#
+# Bản vá nới hạn thăm dò của emailservice PHẢI lặp lại ở đây. manifests.yaml chép từ
+# release/ nên không mang bản vá đặt trong infra/kustomization.yaml. Lần dựng twin đầu
+# tiên hỏng đúng vì lý do này: 8/9 pod sẵn sàng, riêng emailservice CrashLoopBackOff.
+#
+# Bài học: mọi bản vá sửa LỖI CỦA UPSTREAM đều phải áp cho cả hai môi trường, nếu
+# không thì twin và production khác nhau ở đúng chỗ đã từng gây sự cố — mà giống nhau
+# lại chính là điều kiện để con số fidelity có nghĩa.
+#
+# Frontend của twin KHÔNG mở NodePort: kind không thêm được cổng sau khi tạo cluster,
+# 5 cổng đã cố định từ đầu. Vào twin bằng "kubectl port-forward -n twin svc/frontend".
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: twin
+
+resources:
+  - namespace.yaml
+  - manifests.yaml
+  - loadgenerator.yaml    # bo sinh tai chay TRONG cluster, xem chu thich trong file
+
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: frontend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                - name: ENABLE_TRACING
+                  value: "1"
+                - name: COLLECTOR_SERVICE_ADDR
+                  value: "opentelemetrycollector.default.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "twin-frontend"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: productcatalogservice
+      spec:
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                - name: ENABLE_TRACING
+                  value: "1"
+                - name: COLLECTOR_SERVICE_ADDR
+                  value: "opentelemetrycollector.default.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "twin-productcatalogservice"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: checkoutservice
+      spec:
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                - name: ENABLE_TRACING
+                  value: "1"
+                - name: COLLECTOR_SERVICE_ADDR
+                  value: "opentelemetrycollector.default.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "twin-checkoutservice"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: currencyservice
+      spec:
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                - name: ENABLE_TRACING
+                  value: "1"
+                - name: COLLECTOR_SERVICE_ADDR
+                  value: "opentelemetrycollector.default.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "twin-currencyservice"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: paymentservice
+      spec:
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                - name: ENABLE_TRACING
+                  value: "1"
+                - name: COLLECTOR_SERVICE_ADDR
+                  value: "opentelemetrycollector.default.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "twin-paymentservice"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: emailservice
+      spec:
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                - name: ENABLE_TRACING
+                  value: "1"
+                - name: COLLECTOR_SERVICE_ADDR
+                  value: "opentelemetrycollector.default.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "twin-emailservice"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: emailservice
+      spec:
+        template:
+          spec:
+            containers:
+              - name: server
+                livenessProbe:
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+                readinessProbe:
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: loadgenerator
+      spec:
+        template:
+          spec:
+            containers:
+              - name: main
+                volumeMounts:
+                  - name: locustfile
+                    mountPath: /loadgen/locustfile.py
+                    subPath: locustfile.py
+            volumes:
+              - name: locustfile
+                configMap:
+                  name: loadgenerator-locustfile
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: recommendationservice
+      spec:
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                - name: ENABLE_TRACING
+                  value: "1"
+                - name: COLLECTOR_SERVICE_ADDR
+                  value: "opentelemetrycollector.default.svc.cluster.local:4317"
+                - name: OTEL_SERVICE_NAME
+                  value: "twin-recommendationservice"

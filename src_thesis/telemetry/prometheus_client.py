@@ -140,6 +140,7 @@ class PrometheusClient:
         self,
         endpoint_map: dict[tuple[str, int], str],
         window: str = "5m",
+        caller_prefix: str | None = None,
     ) -> dict[str, ServiceRED]:
         """RED của service ĐÍCH, nhìn từ phía người gọi.
 
@@ -151,6 +152,19 @@ class PrometheusClient:
 
         `endpoint_map` lấy từ K8sClient.service_endpoint_map(), phải dựng lại mỗi
         lần chụp snapshot vì ClusterIP thay đổi.
+
+        `caller_prefix` LỌC THEO NGƯỜI GỌI, bắt buộc phải có từ phase 4 trở đi:
+
+          "twin-"  chỉ lấy span do service của twin phát ra
+          ""       chỉ lấy span của production, loại hết span mang tiền tố twin-
+          None     lấy tất cả (dùng khi chưa dựng twin bao giờ)
+
+        Vì sao bắt buộc: tên ở đây suy ra từ `endpoint_map` nên KHÔNG mang tiền tố
+        `twin-`, khác hẳn `red_metrics()` vốn lấy thẳng `service_name` có tiền tố.
+        Không lọc thì `cartservice` của twin và của production dồn vào cùng một
+        khóa, và số liệu hai môi trường trộn vào nhau mà không có dấu hiệu gì báo.
+        Với thí nghiệm fidelity — vốn là phép so sánh hai môi trường — đó là kiểu
+        hỏng làm hỏng luôn kết luận.
         """
         from src_thesis.naming import resolve_target
 
@@ -166,6 +180,14 @@ class PrometheusClient:
             f"(rate({DURATION}{{{kind}}}[{window}])))"
         )
 
+        def caller_ok(metric: dict) -> bool:
+            if caller_prefix is None:
+                return True
+            caller = metric.get("service_name", "") or ""
+            if caller_prefix:
+                return caller.startswith(caller_prefix)
+            return not caller.startswith("twin-")
+
         def target_of(metric: dict) -> str | None:
             name, _ = resolve_target(
                 endpoint_map,
@@ -180,17 +202,25 @@ class PrometheusClient:
         p95s: dict[str, list[float]] = {}
 
         for row in rate_rows:
+            if not caller_ok(row["metric"]):
+                continue
             t = target_of(row["metric"])
             if t:
                 rates[t] = rates.get(t, 0.0) + float(row["value"][1])
         for row in err_rows:
+            if not caller_ok(row["metric"]):
+                continue
             t = target_of(row["metric"])
             if t:
                 errs[t] = errs.get(t, 0.0) + float(row["value"][1])
         for row in p95_rows:
+            # p95 gom theo (server_address, server_port, span_name), KHONG co nhan
+            # service_name nen khong loc duoc theo nguoi goi. Bu lai bang cach chi
+            # giu nhung dich da xuat hien o rate_rows da loc — dich cua twin va cua
+            # production nam o hai dai IP khac nhau nen bang tra da tach san.
             t = target_of(row["metric"])
             v = float(row["value"][1])
-            if t and v == v:  # loại NaN
+            if t and t in rates and v == v:  # loại NaN
                 p95s.setdefault(t, []).append(v)
 
         out: dict[str, ServiceRED] = {}
@@ -211,9 +241,28 @@ class PrometheusClient:
         self,
         endpoint_map: dict[tuple[str, int], str],
         window: str = "5m",
+        caller_prefix: str | None = None,
     ) -> dict[str, ServiceRED]:
-        """Gộp hai nguồn. Số đo phía server luôn thắng vì chính xác hơn."""
-        merged = dict(self.red_metrics_observed(endpoint_map, window))
+        """Gộp hai nguồn. Số đo phía server luôn thắng vì chính xác hơn.
+
+        Hai nguồn đặt tên KHÁC NHAU và chỗ này phải nhớ:
+          - phía server lấy thẳng `service_name`, nên có tiền tố `twin-`
+          - phía người gọi suy ra từ `endpoint_map`, nên KHÔNG có tiền tố
+
+        Để bên gọi chỉ phải xử lý một quy ước, hàm này gắn `caller_prefix` vào tên
+        của nguồn gián tiếp cho khớp với nguồn phía server.
+        """
+        observed = self.red_metrics_observed(endpoint_map, window, caller_prefix)
+        if caller_prefix:
+            observed = {
+                caller_prefix + k: ServiceRED(
+                    service=caller_prefix + v.service,
+                    request_rate=v.request_rate, error_rate=v.error_rate,
+                    p50_ms=v.p50_ms, p95_ms=v.p95_ms, source=v.source,
+                )
+                for k, v in observed.items()
+            }
+        merged = dict(observed)
         merged.update(self.red_metrics(window))
         return merged
 

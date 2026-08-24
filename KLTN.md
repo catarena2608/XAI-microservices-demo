@@ -167,13 +167,25 @@ Hệ quả bắt buộc nhớ:
 - `redis-cart` là điểm mù, ghi thẳng vào phần hạn chế của báo cáo.
 - Không đặt kịch bản lỗi mà bằng chứng duy nhất nằm ở `cartservice` hay `redis-cart` — telemetry không thấy thì XAI không có cửa đoán đúng.
 
-### Service thuộc twin (bản gọn, tiết kiệm RAM)
-BỎ đúng 3 thứ: `adservice`, `recommendationservice`, `loadgenerator`.
-GIỮ tất cả phần còn lại: `frontend`, `cartservice`, `redis-cart`, `productcatalogservice`, `checkoutservice`, `paymentservice`, `currencyservice`, `shippingservice`, `emailservice`.
+### Service thuộc twin — GIỮ ĐỦ CẢ 11, cập nhật ở phase 4
 
-Vì sao không cắt sâu hơn: `checkoutservice` bắt buộc phải có đủ 6 địa chỉ mới khởi động và xử lý đơn hàng được — `PRODUCT_CATALOG_SERVICE_ADDR`, `SHIPPING_SERVICE_ADDR`, `PAYMENT_SERVICE_ADDR`, `EMAIL_SERVICE_ADDR`, `CURRENCY_SERVICE_ADDR`, `CART_SERVICE_ADDR`. Cắt `currencyservice`, `shippingservice` hay `emailservice` khỏi twin thì luồng đặt hàng gãy, mà đó đúng là luồng cần đo. Ba service này đều nhẹ, giữ lại rẻ hơn nhiều so với mất luồng nghiệp vụ chính.
+**Quyết định ban đầu (đã đảo lại):** bỏ `adservice`, `recommendationservice`, `loadgenerator` để tiết kiệm RAM.
 
-Cách làm: copy `release/kubernetes-manifests.yaml` → `infra/twin-manifests.yaml`, xóa 3 block `adservice`, `recommendationservice`, `loadgenerator` (mỗi service gồm 1 Deployment và 1 Service, riêng loadgenerator chỉ có Deployment).
+**Quyết định hiện tại:** twin giữ **đủ 11 service** cộng bộ sinh tải, chỉ khác production một chỗ là `frontend` không mở LoadBalancer vì kind không cấp được IP ngoài.
+
+Ba lý do, tất cả đều là **số đo thật ở phase 4**, không phải suy đoán:
+
+1. **RAM không còn là ràng buộc.** `adservice` 105 MiB, `recommendationservice` 39 MiB, `loadgenerator` khoảng 50 MiB — tổng dưới 200 MiB, trong khi node đo được còn trống **2270 MiB**. Ràng buộc RAM là thật ở mục 2 lúc lập kế hoạch, khi mới chỉ có ước lượng 3.8 GB; đo thật thì twin đầy đủ vẫn chỉ ăn khoảng 300 MiB.
+
+2. **Thiếu `recommendationservice` làm sai lệch chính phép đo.** Nó cũng gọi `productcatalogservice`, nên gỡ nó đi thì `productcatalogservice` của twin chỉ chịu **2.94 req/s** trong khi production chịu **14.45 req/s** — gấp 5 lần. Mà `productcatalogservice` là mục tiêu của kịch bản S1 và S5. Bóp CPU một service đang chịu 2.94 req/s là tình huống khác hẳn bóp một service chịu 14.45 req/s, nên con số fidelity đo ra sẽ nói về tình huống không có thật.
+
+3. **Thiếu `loadgenerator` thì phải bơm tải từ Windows qua `kubectl port-forward`, và cách đó hỏng.** Ở mức tải bằng production (10 người dùng), đường hầm sập: 117 trên 218 request đứt kết nối, twin chỉ đo được 0.20 req/s. Nặng hơn cả chuyện sập, đường hầm còn cộng thêm độ trễ mà production không có, nên số đo hai bên không so sánh được ngay cả khi nó chạy êm.
+
+**Nguyên tắc rút ra, áp dụng cho cả những chỗ khác của đề tài:** một ràng buộc đã ghi trong tài liệu thiết kế vẫn phải kiểm chứng lại bằng số đo trước khi dùng nó để đánh đổi. Ở đây tớ đã hai lần đánh đổi tính so sánh được của phép đo để lấy vài chục MiB RAM mà thực ra không thiếu.
+
+`checkoutservice` vẫn bắt buộc phải có đủ 6 địa chỉ mới khởi động được — `PRODUCT_CATALOG_SERVICE_ADDR`, `SHIPPING_SERVICE_ADDR`, `PAYMENT_SERVICE_ADDR`, `EMAIL_SERVICE_ADDR`, `CURRENCY_SERVICE_ADDR`, `CART_SERVICE_ADDR` — nên `currencyservice`, `shippingservice`, `emailservice` không bao giờ được cắt.
+
+Cách làm: `infra/twin/` là một lớp phủ kustomize gồm `namespace.yaml`, `manifests.yaml` (chép từ `release/`, chỉ bỏ `loadgenerator` và `frontend-external`), `loadgenerator.yaml` (bản riêng kèm ConfigMap locustfile đã bỏ nhiễu số thẻ), và các bản vá trỏ collector qua namespace kèm tiền tố `twin-` cho tên trace.
 
 ---
 
