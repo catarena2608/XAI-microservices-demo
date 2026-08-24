@@ -276,6 +276,28 @@ class XaiReasoner:
                     result.errors.append(
                         "khong ho tro json_schema, ha xuong json_object")
                     continue
+                if e.status_code == 413:
+                    # 413 "Request too large": prompt cong max_tokens vuot tran
+                    # token MOI PHUT cua nha cung cap. Groq goi mien phi cho 8000,
+                    # ma prompt cua agent khoang 6000 cong max_tokens 4000 la vuot.
+                    #
+                    # KHAC 429 O CHO: cho bao lau cung khong het, vi day khong phai
+                    # "dung qua nhanh" ma la "MOT request nay da qua to". Phai thu
+                    # nho lai, va neu khong nho duoc nua thi bo cuoc that.
+                    if self.max_tokens > 1200:
+                        self.max_tokens = max(1200, self.max_tokens // 2)
+                        result.errors.append(
+                            f"API 413 qua to, ha max_tokens xuong {self.max_tokens}")
+                        print(f"    [413] request qua to, ha max_tokens xuong "
+                              f"{self.max_tokens}", flush=True)
+                        continue
+                    attempt += 1
+                    result.attempts = attempt
+                    result.errors.append(
+                        "API 413: request van qua to du da ha max_tokens xuong "
+                        f"{self.max_tokens}. Prompt qua dai so voi tran token cua "
+                        f"nha cung cap — doi sang --provider openai." + body[:200])
+                    break
                 if e.status_code == 429:
                     rate_waits += 1
                     if rate_waits > self.max_rate_limit_waits:

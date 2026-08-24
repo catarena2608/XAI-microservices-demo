@@ -1,0 +1,125 @@
+{
+  "run_id": "test-s2",
+  "mode": "twin_verified",
+  "namespace": "default",
+  "started_at": 1787558735.1849647,
+  "started_at_human": "2026-08-24 15:05:35",
+  "took_s": 398.61,
+  "rounds_used": 2,
+  "max_rounds": 3,
+  "baseline_source": "20260824-145737_baseline.json (2026-08-24 14:57:37, 14 canh)",
+  "has_baseline": true,
+  "healthy_at_end": true,
+  "stop_reason": "he thong da khoe manh",
+  "total_input_tokens": 3873,
+  "total_output_tokens": 1162,
+  "actions_applied": 1,
+  "actions_rejected_by_twin": 0,
+  "rounds": [
+    {
+      "round_no": 1,
+      "snapshot_label": "agent-test-s2-r1",
+      "snapshot_fingerprint": "05bac12af0a05a48",
+      "diff_summary": "3 canh loi, 0 canh cham, 7 canh thieu",
+      "healthy": false,
+      "reasoning_ran": true,
+      "explanation": {
+        "root_cause_service": "currencyservice",
+        "fault_type": "crash",
+        "confidence": 0.96,
+        "reasoning_chain": [
+          "Two independent callers (frontend and checkoutservice) show 100% error rates when calling currencyservice.",
+          "Currencyservice has NO PODS AT ALL, confirming it is down.",
+          "Error edges converge on currencyservice, which outranks other signals per the rules.",
+          "Checkoutservice and frontend both report high overall error rates, explained by the downstream failure of currencyservice.",
+          "No CPU throttling or resource exhaustion is observed, so the issue is not resource related."
+        ],
+        "propagation_path": [
+          "checkoutservice",
+          "frontend"
+        ],
+        "evidence": [
+          "frontend -> currencyservice: 48 calls, 100.0% errors",
+          "checkoutservice -> currencyservice: 10 calls, 100.0% errors",
+          "frontend errors: 75.3% (p95 4.44ms)",
+          "checkoutservice errors: 100.0% (p95 4.79ms)",
+          "currencyservice: NO PODS AT ALL"
+        ],
+        "proposed_actions": [
+          {
+            "action": "scale_up",
+            "target": "currencyservice",
+            "params": [
+              {
+                "key": "replicas",
+                "value": "1"
+              }
+            ],
+            "risk_class": "easy",
+            "rationale": "currencyservice has no running pods, causing 100% errors; scaling up restores the service and clears the error cascade."
+          }
+        ]
+      },
+      "reasoning_ok": true,
+      "reasoning_error": "",
+      "input_tokens": 3873,
+      "output_tokens": 1162,
+      "chosen_action": {
+        "action": "scale_up",
+        "target": "currencyservice",
+        "params": [
+          {
+            "key": "replicas",
+            "value": "1"
+          }
+        ],
+        "risk_class": "easy",
+        "rationale": "currencyservice has no running pods, causing 100% errors; scaling up restores the service and clears the error cascade."
+      },
+      "risk_class": "easy",
+      "twin_verdict": null,
+      "twin_used": false,
+      "action_result": {
+        "action": "scale_up",
+        "target": "currencyservice",
+        "namespace": "default",
+        "applied": true,
+        "verified": true,
+        "detail": "so ban sao 0 -> 1 (yeu cau 1)",
+        "undo_kind": "scale",
+        "undo_args": {
+          "replicas": 0
+        },
+        "error": "",
+        "took_s": 14.15,
+        "ok": true
+      },
+      "promoted": true,
+      "skipped_reason": "",
+      "started_at": 1787558735.1926293,
+      "took_s": 358.07
+    },
+    {
+      "round_no": 2,
+      "snapshot_label": "agent-test-s2-r2",
+      "snapshot_fingerprint": "b23f62ec92ee7e00",
+      "diff_summary": "0 canh loi, 0 canh cham, 0 canh thieu",
+      "healthy": true,
+      "reasoning_ran": false,
+      "explanation": null,
+      "reasoning_ok": false,
+      "reasoning_error": "",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "chosen_action": null,
+      "risk_class": "",
+      "twin_verdict": null,
+      "twin_used": false,
+      "action_result": null,
+      "promoted": false,
+      "skipped_reason": "",
+      "started_at": 1787559093.263408,
+      "took_s": 40.53
+    }
+  ]
+}

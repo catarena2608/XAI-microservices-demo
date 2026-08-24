@@ -1,0 +1,269 @@
+{
+  "run_id": "test-s1-direct",
+  "mode": "direct",
+  "namespace": "default",
+  "started_at": 1787561528.9236383,
+  "started_at_human": "2026-08-24 15:52:08",
+  "took_s": 179.52,
+  "rounds_used": 3,
+  "max_rounds": 3,
+  "baseline_source": "20260824-145737_baseline.json (2026-08-24 14:57:37, 14 canh)",
+  "has_baseline": true,
+  "healthy_at_end": false,
+  "stop_reason": "agent chon khong lam gi",
+  "total_input_tokens": 12234,
+  "total_output_tokens": 1275,
+  "actions_applied": 1,
+  "actions_rejected_by_twin": 0,
+  "rounds": [
+    {
+      "round_no": 1,
+      "snapshot_label": "agent-test-s1-direct-r1",
+      "snapshot_fingerprint": "6606d3ff1f8acdc9",
+      "diff_summary": "0 canh loi, 6 canh cham, 0 canh thieu",
+      "healthy": false,
+      "reasoning_ran": true,
+      "explanation": {
+        "root_cause_service": "productcatalogservice",
+        "fault_type": "latency",
+        "confidence": 0.9,
+        "reasoning_chain": [
+          "Multiple slow edges converge on productcatalogservice: checkoutservice->productcatalogservice (6002.09ms), frontend->productcatalogservice (6002.09ms), and recommendationservice->productcatalogservice (6003.43ms).",
+          "productcatalogservice's own p95 latency is very high at 9750.0ms, confirming it is slow while processing requests.",
+          "Other services calling productcatalogservice (checkoutservice, frontend, recommendationservice) show slow outbound edges, indicating they are relaying productcatalogservice's delay, not causing it.",
+          "No errors are reported on productcatalogservice or its callers, so the fault is latency, not crash or errors.",
+          "CPU usage of productcatalogservice is low (0.004 cores of 0.2), so resource exhaustion is unlikely.",
+          "Pod of productcatalogservice was recreated 464s ago, indicating a recent restart but it is currently running and ready, so no pod_kill fault.",
+          "The critical business path is affected downstream of productcatalogservice, including checkoutservice and frontend, which show high latency as a result."
+        ],
+        "propagation_path": [
+          "checkoutservice",
+          "frontend",
+          "recommendationservice"
+        ],
+        "evidence": [
+          "checkoutservice->productcatalogservice: avg latency 6002.09ms vs healthy 1.39ms",
+          "frontend->productcatalogservice: avg latency 6002.09ms vs healthy 1.77ms",
+          "recommendationservice->productcatalogservice: avg latency 6003.43ms vs healthy 2.46ms",
+          "productcatalogservice p95 latency 9750.0ms",
+          "checkoutservice p95 latency 29000.0ms",
+          "frontend p95 latency 30000.0ms",
+          "CPU usage productcatalogservice 0.004 cores of 0.2 (2% limit)",
+          "Pod productcatalogservice-79fbddb46f-wxq2n is running and ready, recreated 464s ago"
+        ],
+        "proposed_actions": [
+          {
+            "action": "scale_up",
+            "target": "productcatalogservice",
+            "params": [
+              {
+                "key": "replicas",
+                "value": "1"
+              }
+            ],
+            "risk_class": "easy",
+            "rationale": "Scaling up productcatalogservice will provide more CPU resources to reduce latency and improve throughput on the critical path."
+          }
+        ]
+      },
+      "reasoning_ok": true,
+      "reasoning_error": "",
+      "input_tokens": 4035,
+      "output_tokens": 473,
+      "chosen_action": {
+        "action": "scale_up",
+        "target": "productcatalogservice",
+        "params": [
+          {
+            "key": "replicas",
+            "value": "1"
+          }
+        ],
+        "risk_class": "easy",
+        "rationale": "Scaling up productcatalogservice will provide more CPU resources to reduce latency and improve throughput on the critical path."
+      },
+      "risk_class": "easy",
+      "twin_verdict": null,
+      "twin_used": false,
+      "action_result": {
+        "action": "scale_up",
+        "target": "productcatalogservice",
+        "namespace": "default",
+        "applied": false,
+        "verified": true,
+        "detail": "so ban sao da la 1, khong doi gi",
+        "undo_kind": "none",
+        "undo_args": {},
+        "error": "",
+        "took_s": 0.05,
+        "ok": false
+      },
+      "promoted": false,
+      "skipped_reason": "",
+      "started_at": 1787561528.948169,
+      "took_s": 61.46
+    },
+    {
+      "round_no": 2,
+      "snapshot_label": "agent-test-s1-direct-r2",
+      "snapshot_fingerprint": "e1df7bcbd8ad2f2c",
+      "diff_summary": "0 canh loi, 5 canh cham, 0 canh thieu",
+      "healthy": false,
+      "reasoning_ran": true,
+      "explanation": {
+        "root_cause_service": "productcatalogservice",
+        "fault_type": "latency",
+        "confidence": 0.9,
+        "reasoning_chain": [
+          "Multiple callers (frontend, checkoutservice, recommendationservice) show slow calls converging on productcatalogservice, indicating it is the root cause.",
+          "productcatalogservice's own p95 latency is very high at 9750.0ms, confirming it is slow while processing, not resource exhaustion.",
+          "frontend and checkoutservice show very high latency calling productcatalogservice (6001.69ms and 6002.12ms respectively), and frontend also shows high latency calling checkoutservice, which is relaying productcatalogservice's delay.",
+          "CPU usage of productcatalogservice is very low (2% of limit), so the latency is not due to CPU starvation.",
+          "The pod of productcatalogservice was recreated 525s ago, so it is stable now and not a pod_kill or crash.",
+          "Previous scale_up action on productcatalogservice failed due to replica count limit, so scaling up is not possible."
+        ],
+        "propagation_path": [
+          "checkoutservice",
+          "frontend",
+          "recommendationservice"
+        ],
+        "evidence": [
+          "checkoutservice -> productcatalogservice: avg 6002.12ms vs healthy 1.39ms",
+          "frontend -> productcatalogservice: avg 6001.69ms vs healthy 1.77ms",
+          "recommendationservice -> productcatalogservice: avg 6003.16ms vs healthy 2.46ms",
+          "productcatalogservice p95 latency 9750.0ms",
+          "CPU usage of productcatalogservice 0.005 cores of 0.200 (2%)",
+          "frontend -> checkoutservice avg 13525.87ms vs healthy 41.11ms",
+          "productcatalogservice pod was recreated 525s ago"
+        ],
+        "proposed_actions": [
+          {
+            "action": "adjust_resources",
+            "target": "productcatalogservice",
+            "params": [
+              {
+                "key": "cpu_limit",
+                "value": "0.4"
+              }
+            ],
+            "risk_class": "easy",
+            "rationale": "Increasing CPU limit may reduce processing latency since current CPU usage is low but latency is high, indicating possible CPU throttling or insufficient resources."
+          }
+        ]
+      },
+      "reasoning_ok": true,
+      "reasoning_error": "",
+      "input_tokens": 4042,
+      "output_tokens": 421,
+      "chosen_action": {
+        "action": "adjust_resources",
+        "target": "productcatalogservice",
+        "params": [
+          {
+            "key": "cpu_limit",
+            "value": "0.4"
+          }
+        ],
+        "risk_class": "easy",
+        "rationale": "Increasing CPU limit may reduce processing latency since current CPU usage is low but latency is high, indicating possible CPU throttling or insufficient resources."
+      },
+      "risk_class": "easy",
+      "twin_verdict": null,
+      "twin_used": false,
+      "action_result": {
+        "action": "adjust_resources",
+        "target": "productcatalogservice",
+        "namespace": "default",
+        "applied": true,
+        "verified": false,
+        "detail": "tran CPU 200m -> 400m (yeu cau 0.4)",
+        "undo_kind": "cpu",
+        "undo_args": {
+          "limit": "200m",
+          "request": "100m"
+        },
+        "error": "yeu cau 0.4 nhung doc lai duoc 400m",
+        "took_s": 0.09,
+        "ok": false
+      },
+      "promoted": false,
+      "skipped_reason": "",
+      "started_at": 1787561590.415129,
+      "took_s": 59.46
+    },
+    {
+      "round_no": 3,
+      "snapshot_label": "agent-test-s1-direct-r3",
+      "snapshot_fingerprint": "9ef46900b08f243c",
+      "diff_summary": "3 canh loi, 5 canh cham, 0 canh thieu",
+      "healthy": false,
+      "reasoning_ran": true,
+      "explanation": {
+        "root_cause_service": "productcatalogservice",
+        "fault_type": "pod_kill",
+        "confidence": 0.95,
+        "reasoning_chain": [
+          "Multiple callers (frontend, checkoutservice, recommendationservice) show slow and failing calls converging on productcatalogservice, indicating it is the root cause.",
+          "productcatalogservice's own p95 latency is very high at 9750.0ms, confirming it is slow while processing requests.",
+          "productcatalogservice pod was recreated 50 seconds ago, indicating a recent restart rather than a persistent crash or resource exhaustion.",
+          "CPU usage for productcatalogservice is very low (0.001 of 0.400 cores), so resource exhaustion is unlikely.",
+          "The previous action to increase CPU resources on productcatalogservice failed, so a different approach is needed.",
+          "The fault propagates to checkoutservice, frontend, and recommendationservice, causing their high latencies and errors."
+        ],
+        "propagation_path": [
+          "checkoutservice",
+          "frontend",
+          "recommendationservice"
+        ],
+        "evidence": [
+          "frontend -> productcatalogservice: 8.0% errors (11/137 calls), avg latency 5684.09ms vs healthy 1.77ms",
+          "checkoutservice -> productcatalogservice: avg latency 6002.06ms vs healthy 1.39ms",
+          "recommendationservice -> productcatalogservice: 10.7% errors (3/28 calls), avg latency 5749.55ms vs healthy 2.46ms",
+          "productcatalogservice p95 latency 9750.0ms",
+          "productcatalogservice pod was RECREATED 50s ago",
+          "CPU usage productcatalogservice 0.001 of 0.400 cores (0%)"
+        ],
+        "proposed_actions": [
+          {
+            "action": "no_action",
+            "target": "productcatalogservice",
+            "params": [],
+            "risk_class": "easy",
+            "rationale": "The productcatalogservice pod was recently recreated and is recovering; no further action is needed now."
+          }
+        ]
+      },
+      "reasoning_ok": true,
+      "reasoning_error": "",
+      "input_tokens": 4157,
+      "output_tokens": 381,
+      "chosen_action": {
+        "action": "no_action",
+        "target": "productcatalogservice",
+        "params": [],
+        "risk_class": "easy",
+        "rationale": "The productcatalogservice pod was recently recreated and is recovering; no further action is needed now."
+      },
+      "risk_class": "easy",
+      "twin_verdict": null,
+      "twin_used": false,
+      "action_result": {
+        "action": "no_action",
+        "target": "productcatalogservice",
+        "namespace": "default",
+        "applied": true,
+        "verified": true,
+        "detail": "khong lam gi, dung y do",
+        "undo_kind": "none",
+        "undo_args": {},
+        "error": "",
+        "took_s": 0.0,
+        "ok": true
+      },
+      "promoted": true,
+      "skipped_reason": "",
+      "started_at": 1787561649.8828056,
+      "took_s": 58.56
+    }
+  ]
+}

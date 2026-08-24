@@ -315,6 +315,42 @@ Thành công khi: tiêm F2 vào `currencyservice`, chạy agent, agent tự scal
 
 ---
 
+### Tình trạng: PHASE 5 XONG (2026-08-24)
+
+**Cổng chặn ĐẠT:** log JSON dựng lại được trọn vẹn câu chuyện một ca — chế độ, số vòng, token, ảnh nền đã dùng, và với từng vòng: trạng thái hệ thống, chẩn đoán XAI, hành động kèm mức rủi ro, phán quyết twin, kết quả thi hành.
+
+**Đã có:** `actions.py` (7 hành động + hoàn tác + phân mức rủi ro), `react_loop.py` (LangGraph 1.2.11, 7 node 13 cạnh, 3 chế độ), `scripts/agent_run.py`, `src_thesis/graph/baseline.py`.
+
+**Ba ca kiểm thử trên hệ thống thật:**
+
+```
+test-s2         twin_verified  2/3 vong   399s  -> KHOE MANH, agent tu sua duoc
+test-s1         twin_verified  3/3 vong  1182s  -> twin CHAN 1 hanh dong co hai
+test-s1-direct  direct         3/3 vong   180s  -> khong chan gi
+```
+
+**Ca S2 đạt đúng tiêu chí thành công của kế hoạch:** tiêm F2 vào `currencyservice`, agent chẩn đoán đúng (tin cậy 0.96), tự đưa về 1 bản sao, hệ thống hồi phục.
+
+**Ca S1 cho kết quả quan trọng nhất: TWIN ĐÃ CHẶN MỘT HÀNH ĐỘNG CÓ HẠI.** Agent định `restart_pod`, twin thử trước và phán `worse`, nên nó không bao giờ chạm vào production. Phán quyết này khớp với đo fidelity phase 4 — twin chặn đúng và chặn vì lý do đúng.
+
+**Đánh đổi đo được, đi thẳng vào mục 8:** `twin_verified` mất 1182s và chặn 1 hành động; `direct` mất 180s và không chặn gì. Chậm hơn 6.5 lần để an toàn hơn — đúng thứ giả thuyết dự đoán.
+
+**PHẢI GHI RÕ MỘT HẠN CHẾ:** cặp ca S1 twin_verified với S1 direct **không phải đối chứng sạch**, vì agent chế độ `direct` không hề chọn `restart_pod` — LLM dao động giữa hai lần chạy nên "có twin hay không" không phải khác biệt duy nhất. Ca S1 chứng minh **cơ chế chặn hoạt động**, không chứng minh **twin làm giảm hành động có hại tính trung bình**. Cái sau cần phase 6 với 5 lần mỗi chế độ.
+
+**Ba lỗi lớn phát hiện và sửa, chi tiết ở `docs/thesis-notes.md`:**
+
+1. **Agent chạy không có ảnh nền** — phát hiện trước khi kiểm thử. Không có nền thì chỉ bắt được cạnh chậm hơn 500ms tuyệt đối, mà S1/S4/S5 đều dưới 500ms (101–284ms). Kiểm chứng trên snapshot phase 2: S5 không nền cho diff **hoàn toàn sạch**. Agent sẽ báo "hệ thống khỏe mạnh" trên hệ thống đang hỏng. Đã thêm `graph/baseline.py`.
+2. **API 413 với Groq** — prompt agent khoảng 6000 token cộng `max_tokens=4000` vượt trần 8000 token/phút. Khác 429 ở chỗ chờ bao lâu cũng không hết. Đã tự hạ `max_tokens` khi gặp 413, và đổi mặc định sang `--provider openai`.
+3. **So chuỗi lượng CPU** — Kubernetes chuẩn hoá `"0.4"` thành `"400m"`, nên hành động thành công bị báo là thất bại. Đã thêm `cpu_to_millicores()`.
+
+**Nợ mang sang phase 6:**
+
+- **Tự động dọn hậu quả của agent sau mỗi ca.** `inject.py --revert` chỉ hoàn tác thứ nó tiêm, không biết gì về những gì agent đã đổi (số bản sao, trần CPU). Chạy hàng loạt mà không dọn thì mỗi ca bắt đầu từ trạng thái khác ca trước. `ActionResult` đã lưu sẵn `undo_kind` và `undo_args` nên chỉ cần gọi `ActionExecutor.undo()` ở cuối mỗi ca.
+- **XAI chọn sai hành động cho S1** — `scale_up` không gỡ được độ trễ chèn mỗi lần gọi. Khớp số đo phase 3 (S1 hành động đúng chỉ 20–40%). Quy tắc sửa nằm trong gói prompt v5 đã bị loại vì làm tổng thể tệ đi; phase 6 phải tách ra thử riêng từng quy tắc.
+- Hành động vô ích **không trung tính**: sau `scale_up` ở ca S1, số cạnh chậm tăng từ 5 lên 15.
+
+---
+
 ## Phase 6 — Thí nghiệm và viết (2 tuần)
 
 Mục tiêu: bảng số liệu so ba chế độ, đủ để bảo vệ giả thuyết ở mục 0 KLTN.md.

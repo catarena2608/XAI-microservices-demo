@@ -1063,6 +1063,228 @@ Cùng bộ code, cùng kịch bản, cùng hệ thống. Khác biệt duy nhất
 
 ### Phase 5 — ReAct loop
 
+**Trạng thái: code xong (5.1 đến 5.4), CHƯA chạy kiểm thử trên hệ thống có lỗi.**
+
+**5.1 — `src_thesis/agent/actions.py`.**
+
+Bảy hành động của mục 7.2, mỗi cái một hàm kèm hàm hoàn tác và nhãn `risk_class`.
+
+**Điểm thiết kế quan trọng nhất: mọi hàm đều ĐỌC LẠI trạng thái sau khi đổi và so với thứ vừa yêu cầu**, rồi trả về `verified=False` kèm lý do nếu không khớp. Không có bước này thì lệnh chạy xong không lỗi vẫn không chứng minh được gì.
+
+Lý do nằm ở ba lỗi hoàn tác của phase 2, cả ba cùng một tính chất: **hệ thống vẫn hỏng trong khi công cụ báo thành công**. Với agent thì lớp lỗi này nặng hơn hẳn, vì agent **tiếp tục ra quyết định** dựa trên niềm tin rằng nó đã sửa xong — nó sẽ đi sang bước tiếp theo, kết luận nhầm, và có thể làm hỏng thêm.
+
+**`can_apply()` chặn trước khi đụng vào cluster.** LLM có thể đề xuất hành động hợp schema nhưng không thi hành được. Ba trường hợp đã chặn:
+
+- `reroute_traffic` và `purge_queue`: Online Boutique không có service mesh và không có hàng đợi. Hai hành động này nằm trong schema vì mục 7.2 liệt kê, nhưng hệ thống này **không thi hành được** — báo thật thay vì giả vờ làm.
+- Deployment không tồn tại.
+- Hành động cần tên service cụ thể nhưng nhận được `none`.
+
+Chặn ở đây thì đếm được vào "wasted action count" mục 8; để nó ném lỗi giữa chừng thì vòng lặp chết mà không ghi được gì.
+
+**`restart_pod` khai `undo_kind="none"` cho đúng sự thật** — pod cũ đã chết hẳn, không hoàn tác được theo nghĩa đen. Khai là hoàn tác được rồi im lặng không làm gì còn tệ hơn.
+
+**5.2 — `src_thesis/agent/react_loop.py`, dùng LangGraph 1.2.11.**
+
+Bảy node, 13 cạnh: `observe → reason → select →` rẽ nhánh `→ twin/apply/reject → finish_round`.
+
+**Ba chế độ, để phase 6 so sánh:**
+
+```
+twin_verified  hanh dong `hard` phai qua twin  — de tai nay
+direct         hanh dong nao cung ap thang     — DOI CHUNG, co y lam lieu
+xai_only       chi chan doan, khong hanh dong  — do rieng chat luong XAI
+```
+
+Chế độ `direct` cố ý làm liều: nó tồn tại để đo **twin ngăn được bao nhiêu hành động có hại**. Không có nó thì câu "agent-có-twin an toàn hơn" không so với cái gì.
+
+**Vòng lặp nằm NGOÀI graph, không nằm trong.** LangGraph chạy một vòng mỗi lần `invoke`, còn vòng `for` bên ngoài quyết định có đi tiếp không. Cố ý tách vì điều kiện dừng phụ thuộc vào việc đo lại hệ thống sau hành động, mà phép đo đó cần chờ đủ một cửa sổ quan sát 5 phút — nhồi cả phần chờ vào graph làm nó khó đọc và khó thử.
+
+**Phản hồi từ twin được nhồi ngược vào prompt vòng sau.** Đây chính là phần "Observe" của ReAct: agent học từ hậu quả hành động vừa rồi. Khi twin từ chối, prompt vòng sau nhận thêm: *"Action X on Y was tested on the digital twin and REJECTED. Twin verdict: ... Do not propose this same action again."*
+
+**Twin hỏng thì KHÔNG được coi là đã xác nhận.** Bắt mọi ngoại lệ trong nhánh twin và trả `no_change` — mặc định an toàn là không cho áp lên production. Và twin luôn bị xóa trong `finally`, kể cả khi lỗi giữa chừng.
+
+**Một lỗi hiển thị đã sửa ngay khi chạy thử.** Lần chạy đầu in `XAI: THAT BAI` cho một ca mà XAI **chưa hề chạy** — hệ thống đang khỏe nên graph đi thẳng tới `finish_round`. Nguyên nhân: `reasoning_ok=False` là giá trị mặc định, không phân biệt được "chưa chạy" với "chạy và hỏng". Đã thêm cờ `reasoning_ran` tách ba trường hợp.
+
+Đây lại đúng lớp lỗi đã gặp hai lần trước — ở phase 3 với `no service is close to its CPU limit` khi chưa đo được gì, ở phase 4 với `no_change` khi không đủ mẫu. **Giá trị mặc định của một trường luôn có nguy cơ bị đọc như một kết luận.**
+
+**5.3, 5.4 — trần 3 vòng và ghi log.**
+
+Log ghi vào `data/agent_runs/<thoi-diem>_<che-do>_<run_id>.json`, mỗi vòng một bản ghi gồm: snapshot đầu vào kèm mã băm, JSON đầy đủ của XAI, hành động đã chọn kèm mức rủi ro, phán quyết twin, kết quả thi hành, và số token.
+
+Tổng hợp cấp ca có sẵn `actions_applied` và `actions_rejected_by_twin` — hai con số này đi thẳng vào bảng so sánh ba chế độ ở mục 8.
+
+**Đã kiểm chứng không cần cluster:** 20 nhánh rẽ đều đúng — 15 tổ hợp chế độ × hành động, 3 phán quyết twin, 3 trạng thái sau khi quan sát, cộng ca XAI thất bại. Chạy thử `--dry-run` trên hệ thống khỏe mạnh cho kết quả đúng: agent dừng ngay ở vòng 1 với lý do "he thong da khoe manh".
+
+**LỖ HỔNG NGHIÊM TRỌNG PHÁT HIỆN TRƯỚC KHI KIỂM THỬ: agent chạy không có ảnh nền.**
+
+Soi lại code trước khi chạy thật thì thấy `_observe()` gọi `take_snapshot()` mà **không truyền `baseline`**. Hậu quả nằm ở `diff_graphs()`, nó phát hiện cạnh chậm theo hai cách cách nhau rất xa về độ nhạy:
+
+```
+co anh nen   : cham gap SLOW_RATIO = 3 lan so voi chinh canh do luc khoe
+khong co nen : chi bat khi vuot SLOW_ABSOLUTE_MS = 500ms tuyet doi
+```
+
+Đối chiếu số đo thật của ba kịch bản:
+
+```
+S1  frontend -> productcatalogservice   157ms
+S4  frontend -> checkoutservice         284ms
+S5  frontend -> productcatalogservice   101ms
+```
+
+Cả ba đều **dưới 500ms**. Kiểm chứng bằng cách so lại trên chính snapshot đã lưu của phase 2:
+
+```
+S5  khong nen: 0 canh cham, 0 canh loi -> he thong "SACH"
+    co nen   : 6 canh cham, 0 canh loi -> phat hien duoc
+
+S4  khong nen: 0 canh cham, 1 canh loi
+    co nen   : 7 canh cham, 1 canh loi
+```
+
+**S5 không có nền thì diff hoàn toàn sạch.** Agent sẽ báo "hệ thống khỏe mạnh" trong khi `productcatalogservice` bị bóp CPU còn 5% và mọi cạnh chậm gấp 50–118 lần. S4 may là bắt được nhờ cạnh lỗi của `adservice`, nhưng bỏ sót cả 7 cạnh chậm nên XAI sẽ chẩn đoán sai hướng.
+
+Chỉ S2 chạy được, vì service chết sinh ra cạnh **lỗi** chứ không phải cạnh **chậm**, mà cạnh lỗi không cần nền để phát hiện. Nếu tớ chỉ kiểm thử bằng S2 — đúng kịch bản mà kế hoạch gốc nêu làm tiêu chí thành công — thì phase 5 sẽ "đạt" mà lỗ hổng vẫn nằm nguyên đó tới phase 6.
+
+**Sửa:** thêm `src_thesis/graph/baseline.py` nạp lại ảnh nền từ snapshot đã lưu trong `data/runs/`, dựng lại `ServiceGraph` thật chứ không dùng object giả. Lấy file **mới nhất** vì cấu hình hệ thống đổi giữa các phiên — bản vá nới hạn thăm dò của `emailservice` chẳng hạn — nên nền cũ sẽ so ra báo động giả.
+
+Log của agent ghi thêm `baseline_source` và `has_baseline`. Đọc lại một ca cũ mà không biết nó dùng nền nào thì không giải thích được vì sao nó phát hiện hay bỏ sót.
+
+`agent_run.py` in **cảnh báo nặng** khi không tìm được nền, nói thẳng hậu quả thay vì một dòng log mờ nhạt.
+
+**ĐÂY LÀ LẦN THỨ TƯ TRONG PROJECT CÙNG MỘT LỚP LỖI.** Đủ để thành một mục riêng trong chương phương pháp:
+
+```
+phase 3  prompt in "no service is close to its CPU limit"  khi chua do duoc gi
+phase 4  verifier tra "no_change"                          khi khong du mau
+phase 5  log ghi "XAI that bai"                            khi XAI chua chay
+phase 5  diff bao "he thong sach"                          khi khong co nen de so
+```
+
+Cả bốn đều là **hệ thống nói "không có gì bất thường" trong khi sự thật là "không đo được"**. Cả bốn đều **im lặng** — không ngoại lệ, không cảnh báo, chỉ có một kết luận trông hoàn toàn hợp lý.
+
+Nguyên nhân chung: **giá trị mặc định của một trường luôn có nguy cơ bị đọc như một kết luận.** `False` mặc định của `reasoning_ok`, danh sách rỗng mặc định của `slow_edges`, `no_change` mặc định khi không đủ dữ liệu — không cái nào được thiết kế để mang nghĩa "chưa biết", nhưng cả ba đều bị đọc như "đã biết và không có gì".
+
+Quy tắc rút ra, áp dụng cho mọi chỗ còn lại của đề tài: **mọi hàm trả về kết luận đều phải phân biệt được ba trạng thái** — đã đo và có, đã đo và không có, chưa đo được. Gộp hai cái sau lại là nguồn sai lầm tốn kém nhất trong cả project này.
+
+**5.5 — KIỂM THỬ THẬT.**
+
+**Ca 1: S2 (`currencyservice` tắt hẳn), chế độ `twin_verified`. THÀNH CÔNG.**
+
+```
+VONG 1  3 canh loi, 0 canh cham, 7 canh thieu
+        XAI: currencyservice / crash (tin cay 0.96)
+        hanh dong: scale_up tren currencyservice [easy]
+        ket qua: DA AP — so ban sao 0 -> 1
+
+VONG 2  0 canh loi, 0 canh cham, 0 canh thieu
+        he thong KHOE MANH, dung
+```
+
+Log: `data/agent_runs/20260824-151213_twin_verified_test-s2.json`.
+
+Đây đúng tiêu chí thành công mà `KLTN-PLAN.md` đặt cho phase 5: tiêm F2 vào `currencyservice`, agent tự đưa về 1 bản sao, hệ thống hồi phục, toàn bộ ghi vào một file JSON.
+
+Ba chi tiết xác nhận thiết kế chạy đúng:
+
+- XAI chẩn đoán đúng ngay vòng 1, độ tin cậy 0.96 — khớp với kết quả phase 3 (S2 đạt 100% qua 5 lần chạy).
+- `scale_up` thuộc mức `easy` nên đi thẳng lên production, **không qua twin**. Đúng phân mức rủi ro mục 7.3.
+- Vòng 2 in `XAI khong chay — he thong khoe manh` thay vì `XAI that bai`. Bản sửa hiển thị hôm nay hoạt động đúng.
+
+**Một phát hiện phụ về quy trình: agent và sổ theo dõi lỗi là hai thứ độc lập.**
+
+Sau khi agent sửa xong, `currencyservice` đã về 1/1 nhưng `inject.py --status` vẫn báo "đang tiêm lỗi", vì `active_fault.json` chỉ được `inject.py` cập nhật. Agent sửa hệ thống thật nhưng không biết gì về sổ sách của công cụ tiêm lỗi.
+
+Không phải lỗi — hai công cụ vốn độc lập là đúng, agent không nên phụ thuộc vào việc có ai đó ghi sổ. Nhưng **phải nhớ chạy `--revert` sau mỗi ca để dọn sổ**, nếu không thì ca sau `inject.py` sẽ từ chối tiêm vì tưởng còn lỗi cũ. Đã ghi vào quy trình.
+
+**Ca 2: S1 (`productcatalogservice` chậm 6 giây), chế độ `twin_verified`. KẾT QUẢ GIÀU THÔNG TIN NHẤT CỦA CẢ PHASE.**
+
+```
+VONG 1  0 canh loi, 5 canh cham, 0 canh thieu
+        XAI: productcatalogservice / latency (tin cay 0.92)
+        hanh dong: scale_up [easy] -> DA AP, 1 -> 2 ban sao
+
+VONG 2  0 canh loi, 5 canh cham, 0 canh thieu
+        XAI: productcatalogservice / latency (tin cay 0.92)
+        hanh dong: restart_pod [hard] -> twin: WORSE -> BI CHAN
+
+VONG 3  0 canh loi, 15 canh cham, 0 canh thieu
+        XAI THAT BAI: API 413 Request too large
+```
+
+Log: `data/agent_runs/20260824-154002_twin_verified_test-s1.json`.
+
+**Bốn phát hiện, cái đầu tiên là thứ cả đề tài cần chứng minh.**
+
+**1. TWIN ĐÃ CHẶN MỘT HÀNH ĐỘNG CÓ HẠI — bằng chứng trực tiếp cho giả thuyết mục 1 KLTN.md.**
+
+Vòng 2 agent định `restart_pod`. Vì hành động này thuộc mức `hard`, nó bị bắt phải thử trên twin trước. Twin phán `worse`, nên nó **không bao giờ chạm vào production**. Đây chính là cơ chế mà đề tài đặt ra: agent-có-twin gây ít hành động có hại hơn agent-sửa-trực-tiếp.
+
+Đáng chú ý hơn: phán quyết `worse` của twin ở đây **khớp với kết quả fidelity phase 4**, nơi `restart_pod` trên twin cũng ra `worse` và production cũng ra `worse`. Twin không chỉ chặn đúng, nó chặn vì lý do đúng.
+
+**2. Bản vá ảnh nền hoạt động, và đây là ca chứng minh.** Vòng 1 bắt được 5 cạnh chậm. Không có bản vá thì diff ra sạch, agent dừng ngay vòng 1, và **twin không bao giờ được dựng** — cả nhánh quan trọng nhất của phase 5 sẽ không bao giờ chạy.
+
+**3. XAI chọn sai hành động ở vòng 1.** `scale_up` không gỡ được độ trễ chèn vào mỗi lần gọi, nên thêm bản sao là vô ích. Khớp đúng số đo phase 3: S1 có độ chính xác hành động chỉ 20–40%, và quy tắc sửa việc này nằm trong gói v5 đã bị loại vì làm tổng thể tệ đi. Đây là món nợ đã biết, giờ nhìn thấy hậu quả thật của nó.
+
+Hệ quả đo được: sau `scale_up`, số cạnh chậm tăng từ 5 lên 15 ở vòng 3. **Hành động vô ích không trung tính — nó làm hệ thống tệ hơn.** Con số này đi thẳng vào chỉ số "harmful action count" mục 8.
+
+**4. Lỗi thật: API 413 ở vòng 3.** Groq gói miễn phí giới hạn 8000 token mỗi phút, mà prompt của agent khoảng 6000 cộng `max_tokens=4000` là vượt trần. Vòng 3 prompt còn phình to hơn vì 15 cạnh chậm.
+
+**413 khác 429 ở chỗ căn bản:** 429 là "dùng quá nhanh", chờ thì hết; 413 là "MỘT request này đã quá to", chờ bao lâu cũng không hết. Đã sửa: gặp 413 thì tự hạ `max_tokens` xuống một nửa rồi thử lại, hạ tới sàn 1200 mà vẫn không được thì báo thật và khuyên đổi sang OpenAI. Mặc định của `agent_run.py` đổi sang `--provider openai` vì lý do này.
+
+**Một điểm dở về theo dõi đã sửa luôn:** `agent_run.py` chỉ in kết quả sau khi cả ca chạy xong, nên ca này chạy 15 phút trong im lặng. Đúng bài học đã trả giá ở phase 3 khi loạt đánh giá treo 16 phút không in gì. Đã thêm gọi lại sau mỗi vòng để in ngay.
+
+**Một phát hiện phụ: agent để lại hậu quả mà `inject.py --revert` không dọn hết.** Sau ca này `productcatalogservice` còn 2 bản sao do `scale_up`, và `--revert` chỉ gỡ biến `EXTRA_LATENCY` chứ không biết gì về hành động của agent. Phải `kubectl scale` về 1 bằng tay. Với phase 6 chạy hàng loạt thì đây là chỗ phải tự động hóa, nếu không mỗi ca sẽ bắt đầu từ một trạng thái khác ca trước.
+
+**Ca 3: S1 chế độ `direct` (đối chứng, không có twin).**
+
+```
+v1  6 canh cham | productcatalogservice/latency | scale_up[easy]         | KHONG OK
+v2  5 canh cham | productcatalogservice/latency | adjust_resources[easy] | KHONG OK
+v3  3 canh loi, 5 canh cham | productcatalogservice/pod_kill | no_action | OK
+ket thuc: CON LECH — agent chon khong lam gi
+```
+
+**Cặp ca 2 với ca 3 KHÔNG thành đối chứng sạch, và phải nói rõ điều này.**
+
+Ý định ban đầu là giữ mọi thứ giống nhau và chỉ đổi một biến — có twin hay không — để xem twin ngăn được gì. Nhưng agent chế độ `direct` **không hề chọn `restart_pod`**; nó chọn hai hành động mức `easy` rồi kết thúc bằng `no_action`. Biến "có twin" không phải khác biệt duy nhất, vì **bản thân LLM dao động giữa hai lần chạy**.
+
+Đây là hạn chế thật của việc chạy một lần mỗi chế độ. Một cặp ca đơn lẻ không kết luận được gì về nhân quả khi tác nhân được đo còn ngẫu nhiên. Phase 6 chạy 5 lần mỗi chế độ chính là để xử lý chuyện này — và giờ đã có bằng chứng cụ thể cho thấy vì sao con số đó không được cắt bớt.
+
+**Kết quả ca 2 vẫn giữ nguyên giá trị**, chỉ là phải phát biểu cho đúng: nó chứng minh **cơ chế chặn hoạt động** trên hệ thống thật, không chứng minh **twin làm giảm hành động có hại tính trung bình**. Cái sau cần phase 6.
+
+**Lỗi thứ hai bắt được trong ca 3, và là kiểu NGƯỢC với lớp lỗi vẫn theo dõi.**
+
+Vòng 2 báo `KHONG AP DUOC — tran CPU 200m -> 400m (yeu cau 0.4)`. Nhìn kỹ thì hành động **đã thành công**: trần CPU đổi từ 200m lên 400m đúng ý muốn. Kubernetes chuẩn hoá `"0.4"` thành `"400m"`, mà tớ so chuỗi thẳng nên `"400m" != "0.4"` và kết luận thất bại.
+
+Bốn lỗi trước đều là hệ thống báo "ổn" khi thật ra "không biết". Lỗi này ngược lại — báo **thất bại** khi thật ra **thành công**. Nhưng gốc rễ giống nhau: **so sánh mà không tính đến cách biểu diễn**.
+
+Hậu quả nếu không sửa còn nặng hơn vẻ ngoài: agent thấy hành động "thất bại" sẽ thử hành động khác, trong khi trần CPU đã bị đổi rồi — nó chồng thay đổi lên một hệ thống mà nó tưởng chưa đổi gì.
+
+Sửa: thêm `cpu_to_millicores()` so theo số millicore thay vì so chuỗi. Áp cho cả ba chỗ: kiểm tra trước khi đổi, kiểm chứng sau khi đổi, và kiểm chứng khi hoàn tác.
+
+**Phát hiện phụ: `inject.py --revert` không dọn được hậu quả của agent.**
+
+Sau ca 2, `productcatalogservice` còn 2 bản sao; sau ca 3, trần CPU còn 400m. `--revert` chỉ biết hoàn tác thứ **nó** đã tiêm, không biết gì về những gì agent đã đổi. Phải dọn tay bằng `kubectl scale` và `kubectl set resources`.
+
+Với phase 6 chạy hàng loạt thì đây là chỗ **bắt buộc phải tự động hoá**: không dọn thì mỗi ca bắt đầu từ một trạng thái khác ca trước, và toàn bộ phép so sánh giữa các chế độ mất ý nghĩa. `ActionResult` đã lưu sẵn `undo_kind` và `undo_args` nên `ActionExecutor.undo()` làm được việc này — chỉ cần gọi ở cuối mỗi ca.
+
+**CỔNG CHẶN PHASE 5: ĐẠT.**
+
+Yêu cầu là file log JSON phải đủ để dựng lại toàn bộ câu chuyện một ca. Kiểm chứng bằng cách đọc lại cả ba file và in ra được: chế độ, số vòng, thời gian, token, ảnh nền đã dùng, và với từng vòng — trạng thái hệ thống, chẩn đoán của XAI, hành động đã chọn kèm mức rủi ro, phán quyết twin, kết quả thi hành.
+
+```
+test-s2         twin_verified  2/3 vong   399s   3873+1162 token  -> KHOE
+test-s1         twin_verified  3/3 vong  1182s   7761+2883 token  -> CON LECH
+test-s1-direct  direct         3/3 vong   180s  12234+1275 token  -> CON LECH
+```
+
+**Số liệu đi thẳng vào mục 8 KLTN.md:** chế độ `twin_verified` mất 1182 giây và chặn 1 hành động; chế độ `direct` mất 180 giây và không chặn gì. Đây chính là đánh đổi mà giả thuyết dự đoán — **twin an toàn hơn nhưng chậm hơn**. Với S1 thì chậm hơn gấp 6.5 lần, phần lớn là thời gian dựng twin và chờ hai cửa sổ quan sát.
+
+
+
+
+
 ### Phase 6 — Thí nghiệm
 
 ## Hạn chế đã biết (đưa vào báo cáo)

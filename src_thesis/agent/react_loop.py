@@ -1,0 +1,485 @@
+"""Vòng lặp ReAct: nối XAI, hành động và Digital Twin thành một agent tự sửa lỗi.
+
+Đây là mục 7.4 KLTN.md, và là chỗ cả đề tài hướng tới.
+
+    Observe  -> chụp snapshot hệ thống
+    Reason   -> LLM chẩn đoán, xuất JSON đã validate
+    Select   -> lấy hành động ưu tiên cao nhất
+    rẽ nhánh theo risk_class:
+        easy, medium -> Apply thẳng lên production
+        hard         -> VerifyOnTwin: dựng twin, thử, đo
+                        better -> Apply lên production
+                        khác   -> quay lại Reason kèm kết quả twin làm phản hồi
+    Observe lại -> khỏi thì dừng, chưa khỏi thì vòng tiếp, tối đa 3 vòng
+
+BA CHẾ ĐỘ, để phase 6 so sánh (mục 8 KLTN.md):
+
+    direct        bỏ qua twin, hành động nào cũng áp thẳng — đây là ĐỐI CHỨNG
+    twin_verified hành động `hard` phải qua twin — đây là đề tài này
+    xai_only      chỉ chẩn đoán, không hành động — đo riêng chất lượng XAI
+
+Chế độ `direct` cố ý làm liều: nó tồn tại để đo xem twin ngăn được bao nhiêu hành
+động có hại. Không có nó thì con số "agent-có-twin an toàn hơn" không so với cái gì.
+
+VÌ SAO TRẦN 3 VÒNG: không có trần thì agent gặp lỗi nó không sửa được sẽ lặp vô hạn,
+mỗi vòng tốn một lượt gọi LLM và ít nhất 5 phút chờ. Hết trần thì dừng và xuất báo
+cáo "không tự sửa được" kèm lời giải thích — đó cũng là một kết quả hợp lệ, không
+phải thất bại của chương trình.
+"""
+
+from __future__ import annotations
+
+import json
+import time
+import uuid
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Annotated, Literal, TypedDict
+
+from langgraph.graph import END, START, StateGraph
+
+from src_thesis.agent.actions import ActionExecutor, ActionResult, needs_twin, risk_of
+from src_thesis.agent.twin_manager import TwinManager
+from src_thesis.agent.verifier import TwinVerifier, Verdict
+from src_thesis.graph.baseline import load_baseline_graph
+from src_thesis.graph.model import ServiceGraph
+from src_thesis.k8s_client import K8sClient
+from src_thesis.telemetry.prometheus_client import PrometheusClient
+from src_thesis.telemetry.snapshot import take_snapshot
+from src_thesis.xai.reasoner import XaiReasoner
+from src_thesis.xai.schema import Explanation, ProposedAction
+
+RUNS_DIR = Path(__file__).resolve().parents[2] / "data" / "agent_runs"
+
+MAX_ROUNDS = 3
+
+Mode = Literal["direct", "twin_verified", "xai_only"]
+
+
+def _append(left: list, right: list) -> list:
+    """Gộp danh sách khi LangGraph hợp nhất trạng thái giữa các node."""
+    return (left or []) + (right or [])
+
+
+@dataclass
+class RoundLog:
+    """Nhật ký một vòng. Đây là đơn vị nhỏ nhất mà phase 6 đọc lại được."""
+
+    round_no: int
+    snapshot_label: str = ""
+    snapshot_fingerprint: str = ""
+    diff_summary: str = ""
+    healthy: bool = False
+    # Phan biet BA truong hop, khong duoc gop: chua chan doan (he thong khoe nen
+    # khong can), chan doan THAT BAI, va chan doan XONG. Gop lai thi log ghi
+    # "XAI that bai" cho mot ca ma XAI chua he chay — doc lai se hieu nham hoan toan.
+    reasoning_ran: bool = False
+    explanation: dict | None = None
+    reasoning_ok: bool = False
+    reasoning_error: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    chosen_action: dict | None = None
+    risk_class: str = ""
+    twin_verdict: dict | None = None
+    twin_used: bool = False
+    action_result: dict | None = None
+    promoted: bool = False
+    skipped_reason: str = ""
+    started_at: float = field(default_factory=time.time)
+    took_s: float = 0.0
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+class AgentState(TypedDict, total=False):
+    """Trạng thái chảy qua graph LangGraph."""
+
+    run_id: str
+    mode: str
+    namespace: str
+    round_no: int
+    max_rounds: int
+
+    snapshot: dict          # snapshot hien tai, dang dict
+    prompt_text: str
+    explanation: dict | None
+    action: dict | None
+    verdict: dict | None
+
+    feedback: str           # ket qua twin lan truoc, nhoi lai vao prompt
+    healthy: bool
+    stop_reason: str
+    rounds: Annotated[list, _append]
+
+
+class ReactAgent:
+    """Agent ReAct. Tạo một lần rồi chạy nhiều ca."""
+
+    def __init__(
+        self,
+        mode: Mode = "twin_verified",
+        namespace: str = "default",
+        max_rounds: int = MAX_ROUNDS,
+        reasoner: XaiReasoner | None = None,
+        twin: TwinManager | None = None,
+        settle_seconds: int = 300,
+        dry_run: bool = False,
+        baseline: ServiceGraph | None = None,
+    ):
+        self.mode = mode
+        self.namespace = namespace
+        self.max_rounds = max_rounds
+        self.k8s = K8sClient(namespace=namespace)
+        self.prom = PrometheusClient()
+        self.executor = ActionExecutor(k8s=self.k8s, namespace=namespace)
+        self.reasoner = reasoner or XaiReasoner()
+        self.twin = twin or TwinManager()
+        self.twin_verifier = TwinVerifier(prom=self.prom, namespace="twin")
+
+        # ANH NEN — BAT BUOC de phat hien duoc kich ban cham.
+        #
+        # Khong co nen thi `diff_graphs` chi bat canh cham hon 500ms tuyet doi, ma so
+        # do that cua S1, S4, S5 deu duoi 500ms (101-284ms). Agent se nhin ba kich
+        # ban do va ket luan "he thong khoe manh" roi dung ngay vong dau — hong im
+        # lang, khong bao loi gi.
+        #
+        # Xem chu thich day du o src_thesis/graph/baseline.py.
+        if baseline is not None:
+            self.baseline, self.baseline_source = baseline, "do ben goi truyen vao"
+        else:
+            self.baseline, self.baseline_source = load_baseline_graph()
+        # Sau moi hanh dong phai cho DAY mot cua so quan sat roi moi do lai. Bai hoc
+        # dat nhat cua phase 2: cho ngan hon cua so thi so lieu "sau" con lan trang
+        # thai "truoc", va agent se ket luan nham rang hanh dong khong co tac dung.
+        self.settle_seconds = settle_seconds
+        # dry_run bo qua moi thao tac doi cluster. Dung de thu graph chay dung luong
+        # ma khong dung toi he thong that.
+        self.dry_run = dry_run
+        self._round_log: RoundLog | None = None
+        self.graph = self._build_graph()
+
+    # ------------------------------------------------------------------
+    # CAC NODE
+    # ------------------------------------------------------------------
+
+    def _observe(self, state: AgentState) -> AgentState:
+        """Chụp trạng thái hệ thống. Vào vòng nào cũng chụp lại từ đầu."""
+        rnd = state.get("round_no", 0) + 1
+        self._round_log = RoundLog(round_no=rnd)
+
+        snap = take_snapshot(label=f"agent-{state['run_id']}-r{rnd}",
+                             namespace=self.namespace,
+                             baseline=self.baseline)
+        d = snap.to_dict()
+        self._round_log.snapshot_label = d.get("label", "")
+        self._round_log.snapshot_fingerprint = d.get("fingerprint", "")
+
+        diff = d.get("diff", {})
+        n_err = len(diff.get("error_edges", []))
+        n_slow = len(diff.get("slow_edges", []))
+        n_miss = len(diff.get("missing_edges", []))
+        self._round_log.diff_summary = (
+            f"{n_err} canh loi, {n_slow} canh cham, {n_miss} canh thieu")
+        healthy = n_err == 0 and n_slow == 0 and n_miss == 0
+        self._round_log.healthy = healthy
+
+        return {
+            "round_no": rnd,
+            "snapshot": d,
+            "prompt_text": snap.to_prompt_text(),
+            "healthy": healthy,
+        }
+
+    def _reason(self, state: AgentState) -> AgentState:
+        """Gọi LLM chẩn đoán. Output luôn validate bằng Pydantic (mục 5 KLTN.md)."""
+        prompt = state["prompt_text"]
+        feedback = state.get("feedback", "")
+        if feedback:
+            # Nhoi ket qua twin cua vong truoc vao prompt. Day chinh la phan
+            # "Observe" cua ReAct: agent hoc tu hau qua hanh dong vua roi.
+            prompt = (prompt + "\n\nPREVIOUS ATTEMPT IN THIS INCIDENT:\n" + feedback
+                      + "\n\nPropose a different action that addresses the same "
+                        "root cause, or set root_cause_service to 'none' with "
+                        "action no_action if the system has recovered.")
+
+        res = self.reasoner.diagnose(prompt)
+        log = self._round_log
+        log.reasoning_ran = True
+        log.reasoning_ok = res.ok
+        log.input_tokens = res.input_tokens
+        log.output_tokens = res.output_tokens
+        if not res.ok:
+            log.reasoning_error = res.errors[-1][:300] if res.errors else "khong ro"
+            return {"explanation": None}
+
+        log.explanation = res.explanation.model_dump()
+        return {"explanation": log.explanation}
+
+    def _select(self, state: AgentState) -> AgentState:
+        """Lấy hành động ưu tiên cao nhất và gắn mức rủi ro."""
+        exp = state.get("explanation")
+        if not exp:
+            return {"action": None}
+        actions = exp.get("proposed_actions") or []
+        if not actions:
+            return {"action": None}
+        top = actions[0]
+        self._round_log.chosen_action = top
+        self._round_log.risk_class = risk_of(top.get("action", ""))
+        return {"action": top}
+
+    def _verify_on_twin(self, state: AgentState) -> AgentState:
+        """Dựng twin, nạp trạng thái production, thử hành động, đo, rồi xóa twin.
+
+        Twin luôn bị xóa kể cả khi có lỗi giữa chừng — mục 2 KLTN.md cấm chạy twin
+        song song với thí nghiệm production, và twin còn sống là còn ăn RAM.
+        """
+        action = ProposedAction(**state["action"])
+        log = self._round_log
+        log.twin_used = True
+
+        if self.dry_run:
+            v = Verdict("better", "dry_run: gia dinh twin xac nhan")
+            log.twin_verdict = v.to_dict()
+            return {"verdict": v.to_dict()}
+
+        try:
+            self.twin.create_twin()
+            self.twin.load_state(source_namespace=self.namespace)
+
+            twin_exec = ActionExecutor(namespace="twin")
+            # Cho bo sinh tai trong twin am len du mot cua so, neu khong thi phep do
+            # "truoc" con lan luc twin chua co luu luong.
+            time.sleep(self.settle_seconds)
+            before = self.twin_verifier.measure()
+
+            applied = twin_exec.apply(action)
+            if not applied.ok:
+                v = Verdict("no_change",
+                            f"khong thi hanh duoc tren twin: {applied.detail}")
+                log.twin_verdict = v.to_dict()
+                return {"verdict": v.to_dict()}
+
+            time.sleep(self.settle_seconds)
+            after = self.twin_verifier.measure()
+            v = self.twin_verifier.compare(before, after)
+        except Exception as e:
+            # Twin hong thi KHONG duoc coi la da xac nhan. Mac dinh an toan la
+            # khong cho ap len production.
+            v = Verdict("no_change", f"twin gap loi: {str(e)[:200]}")
+        finally:
+            try:
+                self.twin.destroy_twin()
+            except Exception:
+                pass
+
+        log.twin_verdict = v.to_dict()
+        return {"verdict": v.to_dict()}
+
+    def _apply(self, state: AgentState) -> AgentState:
+        """Thi hành hành động lên production."""
+        action = ProposedAction(**state["action"])
+        log = self._round_log
+
+        if self.dry_run:
+            r = ActionResult(action=action.action, target=action.target,
+                             namespace=self.namespace, applied=False, verified=True,
+                             detail="dry_run: khong dung toi cluster")
+        else:
+            r = self.executor.apply(action)
+        log.action_result = r.to_dict()
+        log.promoted = r.ok
+
+        if action.action == "no_action":
+            return {"stop_reason": "agent chon khong lam gi"}
+        if not r.ok:
+            # Hanh dong that bai cung la mot ket qua, phai ghi lai va nhoi vao vong
+            # sau — day chinh la "wasted action count" o muc 8 KLTN.md.
+            return {"feedback": f"Action {action.action} on {action.target} failed: "
+                                f"{r.detail}"}
+        # Cho he thong lang lai truoc khi do o vong sau.
+        if not self.dry_run:
+            time.sleep(self.settle_seconds)
+        return {"feedback": f"Action {action.action} on {action.target} was applied: "
+                            f"{r.detail}"}
+
+    def _reject(self, state: AgentState) -> AgentState:
+        """Twin không xác nhận, không áp lên production."""
+        v = state.get("verdict") or {}
+        action = state.get("action") or {}
+        log = self._round_log
+        log.promoted = False
+        log.skipped_reason = (
+            f"twin phan quyet '{v.get('verdict')}': {v.get('reason', '')}")
+        return {
+            "feedback": (
+                f"Action {action.get('action')} on {action.get('target')} was tested "
+                f"on the digital twin and REJECTED. Twin verdict: "
+                f"{v.get('verdict')} — {v.get('reason', '')}. "
+                f"Do not propose this same action again.")
+        }
+
+    def _finish_round(self, state: AgentState) -> AgentState:
+        """Đóng nhật ký vòng hiện tại."""
+        log = self._round_log
+        log.took_s = round(time.time() - log.started_at, 2)
+        return {"rounds": [log.to_dict()]}
+
+    # ------------------------------------------------------------------
+    # CAC NHANH
+    # ------------------------------------------------------------------
+
+    def _after_observe(self, state: AgentState) -> str:
+        if state.get("healthy"):
+            return "done"
+        if state.get("round_no", 1) > self.max_rounds:
+            return "exhausted"
+        return "reason"
+
+    def _after_select(self, state: AgentState) -> str:
+        exp = state.get("explanation")
+        action = state.get("action")
+        if not exp:
+            return "failed"
+        if not action:
+            return "failed"
+        if self.mode == "xai_only":
+            return "observe_only"
+
+        name = action.get("action", "")
+        if name == "no_action":
+            return "apply"
+        if self.mode == "twin_verified" and needs_twin(name):
+            return "twin"
+        return "apply"
+
+    def _after_twin(self, state: AgentState) -> str:
+        v = state.get("verdict") or {}
+        return "apply" if v.get("verdict") == "better" else "reject"
+
+    # ------------------------------------------------------------------
+
+    def _build_graph(self):
+        g = StateGraph(AgentState)
+        g.add_node("observe", self._observe)
+        g.add_node("reason", self._reason)
+        g.add_node("select", self._select)
+        g.add_node("twin", self._verify_on_twin)
+        g.add_node("apply", self._apply)
+        g.add_node("reject", self._reject)
+        g.add_node("finish_round", self._finish_round)
+
+        g.add_edge(START, "observe")
+        g.add_conditional_edges("observe", self._after_observe, {
+            "reason": "reason",
+            "done": "finish_round",
+            "exhausted": "finish_round",
+        })
+        g.add_edge("reason", "select")
+        g.add_conditional_edges("select", self._after_select, {
+            "twin": "twin",
+            "apply": "apply",
+            "reject": "reject",
+            "failed": "finish_round",
+            "observe_only": "finish_round",
+        })
+        g.add_conditional_edges("twin", self._after_twin, {
+            "apply": "apply",
+            "reject": "reject",
+        })
+        g.add_edge("apply", "finish_round")
+        g.add_edge("reject", "finish_round")
+        g.add_edge("finish_round", END)
+        return g.compile()
+
+    # ------------------------------------------------------------------
+    # CHAY
+    # ------------------------------------------------------------------
+
+    def run(self, run_id: str | None = None, save: bool = True,
+            on_round=None) -> dict:
+        """Chạy trọn một ca, tối đa `max_rounds` vòng.
+
+        LangGraph chạy MỘT vòng mỗi lần gọi `invoke`; vòng lặp bên ngoài ở đây quyết
+        định có đi tiếp không. Cố ý tách như vậy: điều kiện dừng phụ thuộc vào việc
+        đo lại hệ thống sau khi hành động, mà phép đo đó cần chờ đủ một cửa sổ quan
+        sát — nhồi cả phần chờ vào trong graph làm nó khó đọc và khó thử.
+        """
+        run_id = run_id or uuid.uuid4().hex[:8]
+        state: AgentState = {
+            "run_id": run_id,
+            "mode": self.mode,
+            "namespace": self.namespace,
+            "round_no": 0,
+            "max_rounds": self.max_rounds,
+            "feedback": "",
+            "rounds": [],
+        }
+        started = time.time()
+        stop_reason = ""
+
+        for _ in range(self.max_rounds):
+            state = {**state, **self.graph.invoke(state)}
+            last = state["rounds"][-1] if state["rounds"] else {}
+
+            # Bao ngay khi mot vong xong, khong doi ca ca chay het. Mot vong co the
+            # mat 15 phut khi phai dung twin, va chay 15 phut ma khong in gi thi
+            # khong phan biet duoc dang chay voi dang treo — dung bai hoc da tra gia
+            # o phase 3 khi loat danh gia treo 16 phut trong im lang.
+            if on_round is not None:
+                try:
+                    on_round(last)
+                except Exception:
+                    pass
+
+            if state.get("healthy"):
+                stop_reason = "he thong da khoe manh"
+                break
+            if last.get("reasoning_ran") and not last.get("reasoning_ok"):
+                stop_reason = "XAI khong chan doan duoc"
+                break
+            if self.mode == "xai_only":
+                stop_reason = "che do xai_only: chi chan doan, khong hanh dong"
+                break
+            if last.get("chosen_action", {}).get("action") == "no_action":
+                stop_reason = "agent chon khong lam gi"
+                break
+        else:
+            stop_reason = f"het tran {self.max_rounds} vong ma chua khoi"
+
+        report = {
+            "run_id": run_id,
+            "mode": self.mode,
+            "namespace": self.namespace,
+            "started_at": started,
+            "started_at_human": time.strftime("%Y-%m-%d %H:%M:%S",
+                                              time.localtime(started)),
+            "took_s": round(time.time() - started, 2),
+            "rounds_used": len(state.get("rounds", [])),
+            "max_rounds": self.max_rounds,
+            # Ghi lai da chay voi anh nen nao. Doc lai mot ca cu ma khong biet no
+            # dung nen nao thi khong giai thich duoc vi sao no phat hien hay bo sot.
+            "baseline_source": self.baseline_source,
+            "has_baseline": self.baseline is not None,
+            "healthy_at_end": bool(state.get("healthy")),
+            "stop_reason": stop_reason,
+            "total_input_tokens": sum(r.get("input_tokens", 0)
+                                      for r in state.get("rounds", [])),
+            "total_output_tokens": sum(r.get("output_tokens", 0)
+                                       for r in state.get("rounds", [])),
+            "actions_applied": sum(1 for r in state.get("rounds", [])
+                                   if r.get("promoted")),
+            "actions_rejected_by_twin": sum(1 for r in state.get("rounds", [])
+                                            if r.get("twin_used")
+                                            and not r.get("promoted")),
+            "rounds": state.get("rounds", []),
+        }
+        if save:
+            RUNS_DIR.mkdir(parents=True, exist_ok=True)
+            out = RUNS_DIR / f"{time.strftime('%Y%m%d-%H%M%S')}_{self.mode}_{run_id}.json"
+            out.write_text(json.dumps(report, indent=2, ensure_ascii=False),
+                           encoding="utf-8")
+            report["saved_to"] = str(out)
+        return report

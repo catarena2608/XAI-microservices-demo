@@ -1,0 +1,251 @@
+{
+  "run_id": "test-s1",
+  "mode": "twin_verified",
+  "namespace": "default",
+  "started_at": 1787559620.0077462,
+  "started_at_human": "2026-08-24 15:20:20",
+  "took_s": 1182.13,
+  "rounds_used": 3,
+  "max_rounds": 3,
+  "baseline_source": "20260824-145737_baseline.json (2026-08-24 14:57:37, 14 canh)",
+  "has_baseline": true,
+  "healthy_at_end": false,
+  "stop_reason": "XAI khong chan doan duoc",
+  "total_input_tokens": 7761,
+  "total_output_tokens": 2883,
+  "actions_applied": 1,
+  "actions_rejected_by_twin": 1,
+  "rounds": [
+    {
+      "round_no": 1,
+      "snapshot_label": "agent-test-s1-r1",
+      "snapshot_fingerprint": "5d3e38c5add84dbd",
+      "diff_summary": "0 canh loi, 5 canh cham, 0 canh thieu",
+      "healthy": false,
+      "reasoning_ran": true,
+      "explanation": {
+        "root_cause_service": "productcatalogservice",
+        "fault_type": "latency",
+        "confidence": 0.92,
+        "reasoning_chain": [
+          "Multiple slow edges converge on productcatalogservice (frontend, checkoutservice, recommendationservice).",
+          "productcatalogservice reports a high p95 of 9750ms, confirming it is processing slowly.",
+          "productcatalogservice has no outbound calls, so the slowness is not propagated from downstream services.",
+          "checkoutservice and recommendationservice also show high p95, but each has a slow outbound edge to productcatalogservice, indicating they inherit the delay.",
+          "Therefore the latency originates in productcatalogservice and propagates upward to its callers."
+        ],
+        "propagation_path": [
+          "checkoutservice",
+          "recommendationservice",
+          "frontend"
+        ],
+        "evidence": [
+          "frontend -> productcatalogservice: avg 6001.5ms over 152 calls (slow)",
+          "checkoutservice -> productcatalogservice: avg 6001.93ms over 10 calls (slow)",
+          "recommendationservice -> productcatalogservice: avg 6002.71ms over 26 calls (slow)",
+          "productcatalogservice p95 latency = 9750ms (high)"
+        ],
+        "proposed_actions": [
+          {
+            "action": "scale_up",
+            "target": "productcatalogservice",
+            "params": [
+              {
+                "key": "replicas",
+                "value": "2"
+              }
+            ],
+            "risk_class": "easy",
+            "rationale": "Adding more replicas will distribute load and reduce the high p95 latency observed in productcatalogservice."
+          }
+        ]
+      },
+      "reasoning_ok": true,
+      "reasoning_error": "",
+      "input_tokens": 3837,
+      "output_tokens": 1421,
+      "chosen_action": {
+        "action": "scale_up",
+        "target": "productcatalogservice",
+        "params": [
+          {
+            "key": "replicas",
+            "value": "2"
+          }
+        ],
+        "risk_class": "easy",
+        "rationale": "Adding more replicas will distribute load and reduce the high p95 latency observed in productcatalogservice."
+      },
+      "risk_class": "easy",
+      "twin_verdict": null,
+      "twin_used": false,
+      "action_result": {
+        "action": "scale_up",
+        "target": "productcatalogservice",
+        "namespace": "default",
+        "applied": true,
+        "verified": true,
+        "detail": "so ban sao 1 -> 2 (yeu cau 2)",
+        "undo_kind": "scale",
+        "undo_args": {
+          "replicas": 1
+        },
+        "error": "",
+        "took_s": 4.11,
+        "ok": true
+      },
+      "promoted": true,
+      "skipped_reason": "",
+      "started_at": 1787559620.0166185,
+      "took_s": 349.05
+    },
+    {
+      "round_no": 2,
+      "snapshot_label": "agent-test-s1-r2",
+      "snapshot_fingerprint": "7d3e57a054ee168b",
+      "diff_summary": "0 canh loi, 5 canh cham, 0 canh thieu",
+      "healthy": false,
+      "reasoning_ran": true,
+      "explanation": {
+        "root_cause_service": "productcatalogservice",
+        "fault_type": "latency",
+        "confidence": 0.92,
+        "reasoning_chain": [
+          "Multiple slow edges converge on productcatalogservice (frontend, checkoutservice, recommendationservice).",
+          "productcatalogservice reports a high p95 of 9750ms, confirming it is processing slowly.",
+          "checkoutservice shows a very high p95 (29000ms) but its only slow outbound edge is to productcatalogservice, indicating downstream latency.",
+          "recommendationservice also has a high p95 (9750ms) matching its slow call to productcatalogservice.",
+          "No other services exhibit converging slow or error edges, so productcatalogservice is the sole root cause."
+        ],
+        "propagation_path": [
+          "checkoutservice",
+          "recommendationservice",
+          "frontend"
+        ],
+        "evidence": [
+          "frontend -> productcatalogservice: avg 6001.59ms, 164 calls",
+          "checkoutservice -> productcatalogservice: avg 6001.74ms, 8 calls",
+          "recommendationservice -> productcatalogservice: avg 6002.78ms, 29 calls",
+          "productcatalogservice p95 9750.0ms",
+          "checkoutservice p95 29000.0ms (slow only due to productcatalogservice)",
+          "CPU usage for productcatalogservice: 0.004 of 0.200 cores (2% of limit)"
+        ],
+        "proposed_actions": [
+          {
+            "action": "restart_pod",
+            "target": "productcatalogservice",
+            "params": [],
+            "risk_class": "hard",
+            "rationale": "Restarting the pod may clear any stuck state or memory pressure causing the high processing latency."
+          }
+        ]
+      },
+      "reasoning_ok": true,
+      "reasoning_error": "",
+      "input_tokens": 3924,
+      "output_tokens": 1462,
+      "chosen_action": {
+        "action": "restart_pod",
+        "target": "productcatalogservice",
+        "params": [],
+        "risk_class": "hard",
+        "rationale": "Restarting the pod may clear any stuck state or memory pressure causing the high processing latency."
+      },
+      "risk_class": "hard",
+      "twin_verdict": {
+        "verdict": "worse",
+        "reason": "xau di o frontend",
+        "improved": [],
+        "degraded": [
+          "frontend"
+        ],
+        "measured_at": 1787560729.011123,
+        "deltas": [
+          {
+            "service": "frontend",
+            "error_before": 0.0,
+            "error_after": 0.0484,
+            "p95_before": 30000.0,
+            "p95_after": 30000.0,
+            "rate_before": 0.5158,
+            "rate_after": 0.5051,
+            "error_delta": 0.0484,
+            "p95_ratio": 0.0
+          },
+          {
+            "service": "productcatalogservice",
+            "error_before": 0.0,
+            "error_after": 0.0,
+            "p95_before": 9750.0,
+            "p95_after": 9750.0,
+            "rate_before": 1.4978,
+            "rate_after": 1.4193,
+            "error_delta": 0.0,
+            "p95_ratio": 0.0
+          },
+          {
+            "service": "cartservice",
+            "error_before": 0.0,
+            "error_after": 0.0,
+            "p95_before": 4.96,
+            "p95_after": 175.0,
+            "rate_before": 0.3123,
+            "rate_after": 0.2842,
+            "error_delta": 0.0,
+            "p95_ratio": 34.2823
+          },
+          {
+            "service": "checkoutservice",
+            "error_before": 0.0,
+            "error_after": 0.0,
+            "p95_before": 29000.0,
+            "p95_after": 28666.67,
+            "rate_before": 0.0035,
+            "rate_after": 0.014,
+            "error_delta": 0.0,
+            "p95_ratio": -0.0115
+          },
+          {
+            "service": "paymentservice",
+            "error_before": 0.0,
+            "error_after": 0.0,
+            "p95_before": 0.97,
+            "p95_after": 220.0,
+            "rate_before": 0.0035,
+            "rate_after": 0.014,
+            "error_delta": 0.0,
+            "p95_ratio": 225.8041
+          }
+        ]
+      },
+      "twin_used": true,
+      "action_result": null,
+      "promoted": false,
+      "skipped_reason": "twin phan quyet 'worse': xau di o frontend",
+      "started_at": 1787559969.0706255,
+      "took_s": 776.48
+    },
+    {
+      "round_no": 3,
+      "snapshot_label": "agent-test-s1-r3",
+      "snapshot_fingerprint": "9cfa67b029f294d0",
+      "diff_summary": "0 canh loi, 15 canh cham, 0 canh thieu",
+      "healthy": false,
+      "reasoning_ran": true,
+      "explanation": null,
+      "reasoning_ok": false,
+      "reasoning_error": "API 413: Error code: 413 - {'error': {'message': 'Request too large for model `openai/gpt-oss-120b` in organization `org_01ky90f9eneay984hf1370bfpr` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Requested 9419, please reduce your message size and try again. Need more tokens? Upgra",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "chosen_action": null,
+      "risk_class": "",
+      "twin_verdict": null,
+      "twin_used": false,
+      "action_result": null,
+      "promoted": false,
+      "skipped_reason": "",
+      "started_at": 1787560745.6375692,
+      "took_s": 56.49
+    }
+  ]
+}

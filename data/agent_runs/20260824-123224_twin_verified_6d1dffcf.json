@@ -1,0 +1,38 @@
+{
+  "run_id": "6d1dffcf",
+  "mode": "twin_verified",
+  "namespace": "default",
+  "started_at": 1787549487.6230018,
+  "started_at_human": "2026-08-24 12:31:27",
+  "took_s": 56.95,
+  "rounds_used": 1,
+  "max_rounds": 3,
+  "healthy_at_end": true,
+  "stop_reason": "he thong da khoe manh",
+  "total_input_tokens": 0,
+  "total_output_tokens": 0,
+  "actions_applied": 0,
+  "actions_rejected_by_twin": 0,
+  "rounds": [
+    {
+      "round_no": 1,
+      "snapshot_label": "agent-6d1dffcf-r1",
+      "snapshot_fingerprint": "ef5a6908f86ebddc",
+      "diff_summary": "0 canh loi, 0 canh cham, 0 canh thieu",
+      "explanation": null,
+      "reasoning_ok": false,
+      "reasoning_error": "",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "chosen_action": null,
+      "risk_class": "",
+      "twin_verdict": null,
+      "twin_used": false,
+      "action_result": null,
+      "promoted": false,
+      "skipped_reason": "",
+      "started_at": 1787549487.6310093,
+      "took_s": 56.94
+    }
+  ]
+}
