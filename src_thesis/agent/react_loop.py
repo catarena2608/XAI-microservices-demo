@@ -61,6 +61,30 @@ def _append(left: list, right: list) -> list:
     return (left or []) + (right or [])
 
 
+def compact_red(red: dict) -> dict:
+    """Rút bảng RED xuống ba con số mỗi service để nhét vừa nhật ký vòng.
+
+    Giữ `request_rate` chứ không chỉ giữ lỗi và độ trễ: thiếu nó thì không phân
+    biệt được "service này không xấu đi" với "service này quá ít lưu lượng để nói
+    gì" — đúng cái bẫy đã làm hỏng lần đo fidelity đầu tiên ở phase 4.
+
+    Bỏ các tên mang tiền tố `twin-` để số liệu twin không lẫn vào production khi
+    twin đang chạy. Đây là lỗi im lặng nhất của phase 4: hai nguồn trộn vào nhau
+    mà con số vẫn ra đẹp.
+    """
+    out: dict = {}
+    for name, v in (red or {}).items():
+        if name.startswith("twin-"):
+            continue
+        out[name] = {
+            "request_rate": v.get("request_rate", 0.0),
+            "error_rate": v.get("error_rate", 0.0),
+            "p95_ms": v.get("p95_ms", 0.0),
+            "source": v.get("source", ""),
+        }
+    return out
+
+
 @dataclass
 class RoundLog:
     """Nhật ký một vòng. Đây là đơn vị nhỏ nhất mà phase 6 đọc lại được."""
@@ -70,6 +94,17 @@ class RoundLog:
     snapshot_fingerprint: str = ""
     diff_summary: str = ""
     healthy: bool = False
+    # Thoi diem CHUP, khac `started_at` o cho no la moc de tinh MTTR (chi so 3
+    # muc 8): he thong duoc coi la hoi phuc tai thoi diem quan sat thay no sach,
+    # khong phai tai thoi diem vong bat dau.
+    observed_at: float = 0.0
+    # Bang RED goc cua vong nay. PHAI luu, vi chi so 4 (harmful action) la phep so
+    # RED truoc va sau moi hanh dong: `red` cua vong N la "truoc", `red` cua vong
+    # N+1 la "sau" — agent da cho du mot cua so quan sat giua hai lan.
+    #
+    # Khong luu thi phase 6 phai chay lai ca thi nghiem moi cham diem duoc, trai
+    # nguyen tac dau `src_thesis/eval/metrics.py`: cham diem lai tu file JSON.
+    red: dict = field(default_factory=dict)
     # Phan biet BA truong hop, khong duoc gop: chua chan doan (he thong khoe nen
     # khong can), chan doan THAT BAI, va chan doan XONG. Gop lai thi log ghi
     # "XAI that bai" cho mot ca ma XAI chua he chay — doc lai se hieu nham hoan toan.
@@ -175,6 +210,8 @@ class ReactAgent:
         d = snap.to_dict()
         self._round_log.snapshot_label = d.get("label", "")
         self._round_log.snapshot_fingerprint = d.get("fingerprint", "")
+        self._round_log.observed_at = d.get("taken_at", time.time())
+        self._round_log.red = compact_red(d.get("red", {}))
 
         diff = d.get("diff", {})
         n_err = len(diff.get("error_edges", []))

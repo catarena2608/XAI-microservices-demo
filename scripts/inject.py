@@ -27,35 +27,21 @@ except (AttributeError, OSError):
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import yaml
-
+from src_thesis.eval.preflight import wait_for_clean_baseline
 from src_thesis.faults.injectors import (
     ACTIVE_FAULT_FILE,
     FaultInjector,
     load_active_fault,
     load_active_faults,
 )
+from src_thesis.faults.library import inject_scenario, load_scenarios
 from src_thesis.k8s_client import K8sClient
 from src_thesis.telemetry.snapshot import take_snapshot
 
-SCENARIOS = Path(__file__).resolve().parents[1] / "src_thesis" / "faults" / "scenarios.yaml"
-
-
-def load_scenarios() -> dict:
-    data = yaml.safe_load(SCENARIOS.read_text(encoding="utf-8"))
-    return {s["id"]: s for s in data["scenarios"]}
-
-
-def apply_one(inj: FaultInjector, fault: str, target: str, params: dict):
-    if fault == "F1":
-        return inj.inject_latency(target, params.get("extra_latency", "6s"))
-    if fault == "F2":
-        return inj.inject_crash(target)
-    if fault == "F3":
-        return inj.inject_pod_kill(target)
-    if fault == "F4":
-        return inj.inject_cpu_throttle(target, params.get("cpu", "10m"))
-    raise ValueError(f"khong biet loai loi {fault}")
+# Phan nap va tiem kich ban da chuyen sang `src_thesis/faults/library.py`, dung
+# chung voi bo chay 75 ca cua phase 6. Hai duong chay phai tiem giong het nhau,
+# neu khong thi so lieu phase 6 khong so duoc voi cac lan chay tay da ghi trong
+# docs/thesis-notes.md.
 
 
 def cmd_list() -> int:
@@ -112,38 +98,6 @@ def cmd_revert() -> int:
     return 0
 
 
-def wait_for_clean_baseline(sid: str, max_tries: int = 6, gap_s: int = 60):
-    """Chup anh nen, lap lai cho toi khi diff sach.
-
-    VI SAO CAN: cua so quan sat la 5 phut. Vua hoan tac kich ban truoc xong ma tiem
-    ngay kich ban moi thi anh nen van con du am loi cu, va moi so lieu do duoc sau do
-    deu lan lon hai lan tiem. Day la cai bay de mac nhat khi chay nhieu kich ban lien tiep.
-
-    Cho toi da 6 phut. Van khong sach thi dung han, vi loi do la loi that chua sua.
-    """
-    for i in range(1, max_tries + 1):
-        print(f"Chup anh NEN (lan {i}/{max_tries})...")
-        snap = take_snapshot(label=f"{sid}-truoc")
-        path = snap.save()
-        if snap.diff.is_clean():
-            print(f"  anh nen SACH: {path.name}")
-            return snap
-        print(f"  chua sach, con lech: {len(snap.diff.error_edges)} canh loi, "
-              f"{len(snap.diff.slow_edges)} canh cham, "
-              f"{len(snap.diff.missing_edges)} canh thieu")
-        for f in (snap.diff.error_edges + snap.diff.slow_edges)[:3]:
-            print(f"    {f.source} -> {f.target}: {f.detail}")
-        if i < max_tries:
-            print(f"  cho {gap_s}s roi thu lai...")
-            time.sleep(gap_s)
-
-    print("")
-    print("DUNG LAI: he thong chua tro ve trang thai sach sau 6 phut cho.")
-    print("Day khong phai du am cua kich ban truoc ma la loi that chua duoc sua.")
-    print("Kiem tra: kubectl get pods  va  python scripts/smoke_snapshot.py")
-    return None
-
-
 def cmd_inject(sid: str, watch: bool) -> int:
     scenarios = load_scenarios()
     if sid not in scenarios:
@@ -158,18 +112,17 @@ def cmd_inject(sid: str, watch: bool) -> int:
 
     before = None
     if watch:
-        before = wait_for_clean_baseline(sid)
+        before = wait_for_clean_baseline(f"{sid}-truoc")
         if before is None:
             return 1
 
     print(f"\nTiem {sid}: {s['fault']} vao {s.get('target')}")
-    if s["fault"] == "combined":
-        for step in s["steps"]:
-            f = apply_one(inj, step["fault"], step["target"], step.get("params") or {})
+    faults = inject_scenario(inj, s)
+    if len(faults) > 1:
+        for f in faults:
             print(f"  da tiem {f.ground_truth.fault_id}")
     else:
-        f = apply_one(inj, s["fault"], s["target"], s.get("params") or {})
-        gt = f.ground_truth
+        gt = faults[0].ground_truth
         print(f"  fault_id      : {gt.fault_id}")
         print(f"  lan truyen dk : {', '.join(gt.expected_propagation) or '(khong)'}")
         print(f"  hanh dong dung: {', '.join(gt.correct_actions)} ({gt.correct_action_class})")

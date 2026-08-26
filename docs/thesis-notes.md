@@ -1287,6 +1287,113 @@ test-s1-direct  direct         3/3 vong   180s  12234+1275 token  -> CON LECH
 
 ### Phase 6 — Thí nghiệm
 
+## Bước 6.0 — Viết xong bộ chạy thí nghiệm (2026-08-24)
+
+Code đã đủ để chạy 75 ca; chưa chạy ca thật nào.
+
+**Sáu file mới, và vì sao mỗi file tồn tại:**
+
+| File | Việc nó làm |
+|---|---|
+| `src_thesis/faults/library.py` | Nạp và tiêm kịch bản. Tách ra để `inject.py` (chạy tay) và runner (chạy tự động) dùng chung một bản. |
+| `src_thesis/eval/preflight.py` | Kiểm tra sạch trước mỗi ca, chờ ảnh nền sạch, chụp nền mới cho cả phiên. |
+| `src_thesis/eval/metrics.py` (bổ sung) | Chỉ số 3 tới 7 mục 8. |
+| `src_thesis/eval/runner.py` | Vòng lặp 75 ca. |
+| `scripts/eval_run.py` | Dòng lệnh, có `--resume` và `--summary`. |
+| `scripts/plot_results.py` | Bốn đồ thị cho chương kết quả. |
+
+**Ngưỡng của chỉ số 4 và 5, chốt TRƯỚC khi chạy một ca nào:**
+
+```
+harmful : error rate tăng >= 2 điểm phần trăm  HOẶC  p95 tăng >= 20%
+helpful : error rate giảm >= 2 điểm phần trăm  HOẶC  p95 giảm >= 20%
+wasted  : mọi thay đổi dưới ngưỡng, hoặc hành động không thi hành được
+unknown : không service nào đạt 0.3 req/s ở cả hai lần đo
+```
+
+Chốt trước là bắt buộc về mặt phương pháp: với 75 ca thì **luôn tìm được** một ngưỡng làm giả thuyết trông đúng, nên chọn ngưỡng sau khi nhìn số liệu là tự lừa mình.
+
+Con số 2 điểm phần trăm lấy đúng `MIN_ERROR_DELTA` của `verifier.py`. Hai chỗ phải cùng một thước: nếu twin phán `worse` theo một thước mà chương kết quả đếm `harmful` theo thước khác, thì câu "twin chặn được hành động có hại" không kiểm chứng được — nó so hai thứ không so được với nhau.
+
+**Năm kết luận về tác động, không phải ba.** `unknown` tách hẳn khỏi `neutral`. Đây là lần thứ sáu cùng một lớp lỗi xuất hiện trong đề tài này, và lần này nó bị chặn ngay từ lúc thiết kế thay vì phải sửa sau khi số liệu đã sai.
+
+**MTTR của ca không hồi phục trả về `None`, không trả về một con số lớn.** Nhét ca không hồi phục vào trung bình bằng "thời gian đã chờ" kéo trung bình xuống, và nó nói dối theo hướng làm chế độ tệ trông tốt hơn. Thống kê gọi kiểu dữ liệu này là **bị cắt cụt** (censored). Mọi bảng và mọi đồ thị đều in `n_censored` cạnh `mttr_mean_s`; hai số này phải đọc cùng nhau mới có nghĩa.
+
+Chế độ `baseline` không sửa gì nên phần lớn ca của nó sẽ bị cắt cụt ở 900 giây. Đó chính là điều cần chứng minh: **không có agent thì lỗi cấu hình nằm đó mãi.** Nhưng 900 giây là một **cái trần**, không phải một phép đo — ghi "baseline không hồi phục trong 900 giây" là đúng, ghi "MTTR của baseline là 900 giây" là sai.
+
+**Trả xong món nợ dọn dẹp của phase 5.** Runner hoàn tác hành động của agent bằng `ActionExecutor.undo()`, đọc `undo_kind` và `undo_args` đã lưu sẵn trong `ActionResult`.
+
+Thứ tự hoàn tác là **ngược lại thứ tự tác động**, giống gỡ chồng sách. Ví dụ S5 bóp trần CPU của `productcatalogservice` xuống 10m rồi agent nâng lên 400m: hoàn tác agent đưa về 10m, hoàn tác lỗi đưa về giá trị gốc. Làm ngược lại thì trần CPU kẹt ở 400m sau khi ca kết thúc, và ca sau bắt đầu từ một hệ thống khác.
+
+**Thứ tự chạy các ca: lặp ngoài, kịch bản giữa, chế độ trong.** Chạy hết 15 ca của lần lặp 1 rồi mới sang lần lặp 2, chứ không chạy hết 5 lần của S1 rồi mới sang S2. Ngắt giữa chừng — mà một phiên 25 tiếng thì gần như chắc chắn có ngắt — thì vẫn còn một lượt quét đầy đủ mọi chế độ và mọi kịch bản để so sánh, thay vì có đầy đủ S1 và không có gì khác. `--resume` bỏ qua ca đã có file nên chạy tiếp được nhiều buổi.
+
+## Hai lỗi bắt được ngay khi viết code
+
+**1. Cache của LLM sẽ làm độ lệch chuẩn ra 0 một cách giả tạo.**
+
+`XaiReasoner` nhớ kết quả trên đĩa, khóa theo dấu vân tay của phần lệch. Mục 8 bắt mỗi kịch bản chạy 5 lần **để có độ lệch chuẩn**, mà bật cache thì lần thứ hai trở đi lấy lại đúng đáp án cũ. Con số độ lệch chuẩn vẫn in ra, vẫn đẹp, và hoàn toàn vô nghĩa — nó đo cache chứ không đo mức dao động của LLM.
+
+Runner tắt cache bằng `use_cache=False`. Đây là lỗi sẽ không bao giờ báo gì cả, chỉ âm thầm biến kết quả thành vô giá trị.
+
+**2. Hàm đọc twin fidelity in ra 0.0% (0/12) trong khi kết quả thật là 100% (6/6).**
+
+Tớ tự đếm lại từ mảng `trials`, mà `trials` có **hai dòng mỗi phép thử** — một của twin, một của production — nên 6 phép thử thành 12 dòng, và không dòng nào có trường `match`. File đã ghi sẵn `fidelity`, `matches`, `total` từ phase 4; đọc thẳng ba trường đó là xong.
+
+Bắt được nhờ chạy thử một ca giả và **nhìn con số có hợp lý không**, chứ hàm không hề ném lỗi. Đây đúng là kiểu lỗi mà chương kết quả sợ nhất: một con số sai in ra bình thản giữa những con số đúng.
+
+**Sửa `--dry-run` mô tả sai trong cả `eval_run.py` lẫn `agent_run.py`.** Cả hai ghi "không đụng tới cluster và không gọi LLM thật". Sai: `--dry-run` vẫn đọc cluster và vẫn gọi LLM, nó chỉ không sửa gì và không chờ. Tức là **vẫn tốn tiền API**. Câu mô tả cũ dễ làm người chạy tưởng dry-run là miễn phí.
+
+## Đã kiểm chứng những gì
+
+Chưa chạy ca thật. Đã kiểm bằng dữ liệu giả và một ca `--dry-run`:
+
+- Bảy trường hợp phân loại tác động, kể cả ca vừa có service tốt lên vừa có service xấu đi (phải ra `harmful`, vì lỗi xếp trên độ trễ) và ca lưu lượng quá thấp (phải ra `unknown`, không được ra `neutral`).
+- MTTR trả `None` đúng cho ca không hồi phục.
+- `_score` trên một báo cáo giả có 3 vòng, trong đó vòng 2 bị twin chặn: ra đúng root cause, Jaccard 1.0, MTTR 1300 giây, 1 hành động có hại, 1 hành động bị twin chặn, 0.011 đô la.
+- Thứ tự hoàn tác: đúng ngược chiều, bỏ qua `no_action` và bỏ qua hành động đã thất bại.
+- Bốn đồ thị vẽ ra file được.
+
+## Chia 75 ca ra nhiều buổi
+
+Không phải chạy một mạch. Mỗi ca là một đơn vị khép kín — sạch, tiêm, chạy, đo, hoàn tác — nên cắt giữa hai ca không ảnh hưởng gì tới ca nào.
+
+**Cách chia đề nghị: một lần lặp mỗi buổi, 5 buổi.**
+
+```
+buoi 1  python -u scripts/eval_run.py --repeats 1
+buoi 2  python -u scripts/eval_run.py --resume <ma-phien> --repeats 2
+buoi 3  python -u scripts/eval_run.py --resume <ma-phien> --repeats 3
+buoi 4  python -u scripts/eval_run.py --resume <ma-phien> --repeats 4
+buoi 5  python -u scripts/eval_run.py --resume <ma-phien> --repeats 5
+```
+
+Mỗi buổi 15 ca, khoảng 5,5 giờ. Dùng **cùng một mã phiên** cho cả năm buổi; `--resume` bỏ qua ca đã có file.
+
+Chia theo lần lặp tốt hơn chia theo kịch bản ở một điểm quan trọng: **sau buổi 1 đã có một lượt quét đầy đủ 3 chế độ × 5 kịch bản**. Nếu hết thời gian ở buổi 3 thì vẫn còn một bảng kết quả hoàn chỉnh với n = 3, thay vì có S1 đủ 5 lần và bốn kịch bản kia trắng.
+
+Ai muốn canh theo đồng hồ thì dùng `--budget-minutes 360`. Nó dừng **trước khi bắt đầu một ca mới**, không cắt ngang ca đang chạy — cắt giữa chừng sẽ để lại lỗi đã tiêm và hành động của agent còn nguyên trên hệ thống qua đêm.
+
+**Hạ mốc bỏ cuộc của chế độ `baseline` từ 900 xuống 600 giây.** 600 giây bằng đúng hai cửa sổ quan sát: cần ít nhất hai vì cửa sổ dài 300 giây, nên ngay sau khi hệ thống thật sự khỏe lại thì cửa sổ vẫn còn giữ dữ liệu lúc hỏng — chờ chưa đủ hai cửa sổ thì một ca **đã** hồi phục vẫn bị chấm là không hồi phục.
+
+Không cần dài hơn, vì bốn trong năm kịch bản là lỗi cấu hình mà Kubernetes không bao giờ tự hoàn tác; chỉ S3 tự khỏi sau khoảng 30 giây. Tiết kiệm hơn 2 giờ máy trên 25 ca baseline. Tổng còn 27,5 giờ.
+
+**Một biến lạ mà việc chia buổi tạo ra: ảnh nền đổi giữa các buổi.**
+
+Runner chụp ảnh nền mới ở đầu mỗi phiên. Ảnh nền quyết định độ nhạy của phép phát hiện cạnh chậm — chậm gấp 3 lần so với **chính cạnh đó** lúc khỏe. Nền buổi 1 và nền buổi 2 khác nhau nghĩa là ca của hai buổi được chấm bằng hai cái thước khác nhau.
+
+Chụp nền mới mỗi buổi vẫn đúng hơn dùng nền cũ, vì máy khởi động lại thì độ trễ tuyệt đối đổi theo và nền cũ sẽ sinh báo động giả hàng loạt. Nhưng mức lệch phải **nhìn thấy được**. Đã thêm `describe_baseline_drift()`: mỗi buổi in ra số cạnh mất và thêm, độ trễ trung vị đổi mấy lần, và cảnh báo nếu trung vị lệch quá 1,5 lần — nửa đường tới ngưỡng `SLOW_RATIO = 3`.
+
+Ai chắc chắn máy không khởi động lại giữa các buổi thì ghim nền bằng `--baseline-file <duong-dan>`. Đánh đổi rõ ràng: mọi ca cùng một thước, nhưng nền ghim sai thì sai cho toàn bộ phiên.
+
+Đây vẫn là cùng một nguyên tắc của phase 4: so hai thứ thì mọi biến ngoài biến đang khảo sát phải khớp, và khớp một nửa nguy hiểm hơn không khớp gì vì nó tạo cảm giác đã kiểm soát.
+
+## Còn nợ trước khi chạy đủ 75 ca
+
+- **XAI chọn sai hành động cho S1.** `scale_up` không gỡ được độ trễ chèn mỗi lần gọi. Quy tắc sửa nằm trong gói prompt v5 đã bị loại vì làm tổng thể tệ đi từ 90% xuống 66.7%; phải tách ra thử **từng quy tắc một**, không thử cả gói.
+- **Chạy thử vài ca trước** để đo thời gian thật một ca, rồi mới đặt lịch cho đủ 75 ca.
+- Hành động vô ích **không trung tính**: sau `scale_up` ở ca S1, số cạnh chậm tăng từ 5 lên 15. Chỉ số 5 đếm nó là `wasted`, nhưng phần thảo luận phải nói rõ là "vô ích" không đồng nghĩa "vô hại".
+
+
 ## Hạn chế đã biết (đưa vào báo cáo)
 
 - Ba service không phát span server: `cartservice`, `shippingservice`, `adservice`. `redis-cart` hoàn toàn không nhìn thấy. Cạnh tới `cartservice` và `shippingservice` suy ra từ span client của `frontend` và `checkoutservice`.

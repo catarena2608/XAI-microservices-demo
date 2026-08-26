@@ -365,6 +365,41 @@ Thành công khi: có bảng số cho thấy twin-verified có harmful action th
 
 ---
 
+### Tình trạng: PHASE 6 — CODE XONG, CHƯA CHẠY CA NÀO (2026-08-24)
+
+**Đã có:** `src_thesis/faults/library.py`, `src_thesis/eval/preflight.py`,
+`src_thesis/eval/runner.py`, phần bổ sung chỉ số 3–7 trong `src_thesis/eval/metrics.py`,
+`scripts/eval_run.py`, `scripts/plot_results.py`.
+
+**Lệnh chạy:**
+
+```
+python -u scripts/eval_run.py --limit 5
+python -u scripts/eval_run.py
+python -u scripts/eval_run.py --resume <ma-phien>
+python scripts/plot_results.py <ma-phien>
+```
+
+**Ngưỡng chỉ số 4 và 5 đã chốt trước khi chạy:** error rate tăng từ 2 điểm phần trăm
+hoặc p95 tăng từ 20% thì tính là harmful. Dưới 0.3 req/s thì không kết luận gì —
+`unknown` tách riêng khỏi `wasted`.
+
+**Đã trả món nợ dọn dẹp của phase 5:** runner tự hoàn tác hành động của agent trước,
+rồi mới hoàn tác lỗi đã tiêm, theo thứ tự ngược chiều tác động.
+
+**Hai lỗi bắt được lúc viết code, chi tiết ở `docs/thesis-notes.md`:** cache của LLM
+sẽ làm độ lệch chuẩn ra 0 giả tạo nếu không tắt; hàm đọc twin fidelity đếm nhầm
+`trials` (12 dòng cho 6 phép thử) và in ra 0.0% thay vì 100%.
+
+**Ước lượng thời gian, từ số đo thật của phase 5:** một ca `twin_verified` khoảng 31
+phút, `direct` khoảng 14 phút, `baseline` khoảng 26 phút. Đủ 75 ca vào khoảng 25 giờ
+máy, chia nhiều buổi được nhờ `--resume`. Tiền API dưới 1 đô la với `gpt-4.1-mini`.
+
+**Còn nợ trước khi chạy đủ:** XAI chọn sai hành động cho S1 — quy tắc sửa nằm trong
+gói prompt v5 đã bị loại, phải tách ra thử từng quy tắc một.
+
+---
+
 ## Tổng thời gian
 
 Phase 0 một tuần, phase 1 và 3 và 4 mỗi cái một tuần rưỡi, phase 2 và 5 mỗi cái một tuần, phase 6 hai tuần. Cộng lại khoảng 9,5 tuần nếu không tắc chỗ nào. Phase 0 bước 0.4 là chỗ dễ trượt tiến độ nhất, đặt hạn cứng một tuần cho nó.

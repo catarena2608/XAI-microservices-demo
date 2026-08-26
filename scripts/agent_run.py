@@ -1,6 +1,6 @@
 """Chay agent ReAct tren he thong that.
 
-  python scripts/agent_run.py --dry-run           thu graph, KHONG dung toi cluster
+  python scripts/agent_run.py --dry-run           chay that nhung khong sua gi
   python scripts/agent_run.py                     chay che do twin_verified
   python scripts/agent_run.py --mode direct       bo qua twin (doi chung)
   python scripts/agent_run.py --mode xai_only     chi chan doan, khong hanh dong
@@ -89,7 +89,8 @@ def main() -> int:
     ap.add_argument("--settle", type=int, default=300,
                     help="giay cho sau moi hanh dong (mac dinh 300 = mot cua so)")
     ap.add_argument("--dry-run", action="store_true",
-                    help="thu graph, khong dung toi cluster va khong goi LLM that")
+                    help="khong sua gi va khong cho — nhung VAN doc cluster va VAN "
+                         "goi LLM that, tuc la van ton tien API")
     ap.add_argument("--run-id", default=None)
     ap.add_argument("--provider", default="openai",
                     choices=["openai", "groq"],
