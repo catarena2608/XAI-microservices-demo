@@ -11,7 +11,19 @@ from __future__ import annotations
 # Pod ha tang, khong thuoc he thong nghiep vu duoc nghien cuu.
 # Loc khoi POD HEALTH de LLM khong do loi cho chinh he thong quan sat — nguy co
 # nay lo ra o kich ban S3 khi pod jaeger vua duoc khoi dong lai va hien trong prompt.
-INFRA_PODS = ("jaeger", "opentelemetrycollector", "loadgenerator")
+#
+# "mon-" va "prometheus-mon" la 5 pod cua kube-prometheus-stack, cung nam o
+# namespace `default`. Chung cung la he thong quan sat, nen cung phai loc:
+# grafana giu 413Mi va prometheus 403Mi, tuc hai ung vien OOMKilled sang gia nhat
+# cluster. Mot lan chung khoi dong lai giua luot tiem loi la POD HEALTH bao bat
+# thuong, va LLM do loi cho dung cai dang do dac no.
+INFRA_PODS = (
+    "jaeger",
+    "opentelemetrycollector",
+    "loadgenerator",
+    "mon-",
+    "prometheus-mon",
+)
 
 from src_thesis.graph.diff import GraphDiff
 from src_thesis.graph.logical_graph import LogicalTopology
