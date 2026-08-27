@@ -32,6 +32,17 @@ scenarios:
       checkoutservice->productcatalogservice và recommendationservice->productcatalogservice.
       Kèm theo p95 của frontend tăng vọt.
 
+      Đo lại 2026-08-26: 5 cạnh chậm — ba cạnh dự đoán đều ~6001ms, đúng bằng
+      EXTRA_LATENCY, cộng hai cạnh lan tiếp là frontend->checkoutservice 16030ms và
+      frontend->recommendationservice 6006ms. p95 frontend 30000ms tức chạm trần thời
+      gian chờ. Thông lượng sụp còn 36% nên có cảnh báo sập, nhưng lần này KHÔNG sinh
+      missing_edges giả.
+
+      Chi tiết phân biệt S1 với S5: phần CPU báo MỌI service dưới 3% trần, kể cả
+      productcatalogservice (1%). Ở S5 cùng service đó chạm 71%. Hai kịch bản cho cùng
+      một triệu chứng bề mặt và khác nhau đúng ở chỗ này — nếu XAI không đọc metric
+      hạ tầng thì không có cách nào phân biệt.
+
   - id: S2
     fault: F2
     target: currencyservice
@@ -41,8 +52,13 @@ scenarios:
       checkoutservice đều gọi nó, nên lỗi lan theo hai nhánh khác nhau.
     expected_symptom: >
       error_edges (KHÔNG phải missing_edges) trên checkoutservice->currencyservice,
-      frontend->currencyservice, và lan sang frontend->checkoutservice với tỉ lệ lỗi
-      bằng đúng nhánh gốc. Đo thật lần đầu: 58.8%, 26.5%, 58.8%.
+      frontend->currencyservice, và lan sang frontend->checkoutservice.
+      POD HEALTH báo currencyservice "NO PODS AT ALL".
+
+      Đo lại 2026-08-26 với 330 giây chờ: cả ba cạnh đều 100%. Số cũ 58.8%/26.5%/58.8%
+      đo ở lần chờ 180 giây, tức cửa sổ còn lẫn dữ liệu lúc hệ thống khỏe nên bị pha
+      loãng — số cũ mô tả phép đo hỏng, không mô tả sự cố. Kèm theo, thông lượng sụp
+      còn 14% nên sinh thêm 7 missing_edges giả, tất cả đã được gắn nhãn KÉM TIN CẬY.
 
   - id: S3
     fault: F3
@@ -54,10 +70,14 @@ scenarios:
       BIẾT KHÔNG LÀM GÌ hay không. Tín hiệu chính là TUỔI POD, không phải số lần
       khởi động lại — xóa pod tạo ra pod mới với restarts=0.
     expected_symptom: >
-      POD HEALTH báo checkoutservice "pod was RECREATED ... ago". Có thể kèm error_edges
-      ngắn hạn trên frontend->checkoutservice, nhưng KHÔNG chắc chắn: checkout chỉ
-      khoảng 4 lần mỗi phút nên khoảng trống dễ rơi vào lúc không có đơn nào.
-      Lần chạy đầu tiên cho 0/18 lỗi và không một triệu chứng nào — xem thesis-notes.
+      POD HEALTH báo checkoutservice "pod was RECREATED ... ago". Đây là tín hiệu chắc
+      chắn duy nhất. Tỉ lệ lỗi thường bằng 0: checkout chỉ khoảng 4 lần mỗi phút nên
+      khoảng trống 30 giây dễ rơi vào lúc không có đơn nào.
+
+      Đo lại 2026-08-26: có thêm slow_edge frontend->checkoutservice 121.75ms so với
+      nền 29.4ms (chậm gấp 4.1 lần), và một request 1378ms đúng lúc pod bị giết.
+      Cạnh này nằm DƯỚI ngưỡng tuyệt đối 500ms nên chỉ bắt được khi truyền ảnh nền
+      vào. Không có nền thì S3 trở lại thành ca không triệu chứng như lần đầu.
 
   - id: S4
     fault: F4
@@ -71,6 +91,11 @@ scenarios:
     expected_symptom: >
       p95 của frontend tăng mạnh, mọi cạnh xuất phát từ frontend chậm theo,
       CPU của pod frontend chạm trần trong metric hạ tầng.
+
+      Đo lại 2026-08-26: frontend 96% trần CPU, p95 9487ms (nền ~45ms), cả 6 cạnh chậm
+      đều xuất phát từ frontend còn service đích vẫn nhanh. Ngoài ra có error_edges
+      frontend->adservice 74.1% — nghẹt CPU làm quá hạn chờ khi gọi adservice. Triệu
+      chứng lỗi này không có trong lần đo đầu, nên S4 sinh CẢ chậm lẫn lỗi.
 
   - id: S5
     fault: F4
@@ -86,6 +111,11 @@ scenarios:
       Triệu chứng bề mặt giống hệt S1 (productcatalogservice chậm), nhưng khác ở chỗ
       metric CPU của pod chạm trần. Phân biệt được hay không nằm ở chỗ XAI có đọc
       metric hạ tầng hay chỉ nhìn RED metrics.
+
+      Đo lại 2026-08-26: productcatalogservice dùng 0.007 trên trần 0.010 lõi, tức 71%
+      — SÁT ngưỡng cảnh báo 0.7. Lần lấy mẫu nào rơi xuống 0.006/0.010 (60%) là mất
+      nhãn "AT LIMIT", và khi đó S5 không còn phân biệt được với S1. Phải theo dõi
+      chỗ này khi chấm điểm phase 6, vì mỗi kịch bản chạy 5 lần.
 
   - id: S6
     fault: combined
@@ -104,6 +134,11 @@ scenarios:
       Vừa có slow_edges của productcatalogservice vừa có error_edges của
       currencyservice. Kiểm tra XAI có báo cáo được HAI nguyên nhân gốc hay chỉ
       bám lấy cái rõ nhất rồi bỏ qua cái kia.
+
+      Đo lại 2026-08-26: ba cạnh lỗi 100% của currencyservice nằm cạnh ba cạnh chậm
+      ~6001ms của productcatalogservice, hai nhóm dấu hiệu tách bạch rõ. Thông lượng
+      sụp còn 11% sinh 7 missing_edges giả, đã gắn nhãn KÉM TIN CẬY. Phần CPU báo mọi
+      service đều dưới 2% trần — đó là cách phân biệt S6 với S4 và S5.
 
 # Thứ tự chạy đề nghị: S3 trước vì nó tự hồi phục và ít rủi ro nhất, rồi S2, S1,
 # S5, S4, cuối cùng S6. S4 để gần cuối vì bóp CPU của frontend là ca dễ làm web

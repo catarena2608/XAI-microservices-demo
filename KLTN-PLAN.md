@@ -178,6 +178,21 @@ Nếu kịch bản nào không tạo ra dấu hiệu quan sát được thì b�
 
 **Cổng chặn:** sau mỗi lần hoàn tác, hệ thống phải trở về trạng thái sạch. `inject.py` tự kiểm tra điều này: nó chụp ảnh nền và chỉ tiêm khi diff sạch, chờ tối đa 6 phút, quá thì dừng và báo lỗi thật chưa sửa.
 
+### Chạy lại toàn bộ trên môi trường mới (2026-08-26) — 6/6 ĐẠT
+
+Môi trường đã đổi từ kind trên Windows sang **k3s trên VM Ubuntu 4 vCPU / ~4 GB, vào qua `kubectl port-forward`**. Chạy lại cả 6 kịch bản, cổng chặn vẫn đạt. Sáu phát hiện mới, chi tiết ở `docs/thesis-notes.md`:
+
+- **Số 58.8% của S2 là phép đo hỏng, không phải sự cố.** Chờ đủ 330 giây thì cả ba cạnh đều 100%. Số cũ đo ở lần chờ 180 giây — cùng lần đã sinh ra bài học "phải chờ lâu hơn cửa sổ quan sát". Bài học kèm theo: sửa nguyên nhân xong phải đo lại mọi con số đã lỡ ghi dưới nguyên nhân đó.
+- **Ảnh nền biến S3 từ ca trắng thành ca phát hiện được**: `frontend->checkoutservice` 121.75ms so với nền 29.4ms. Cạnh này dưới ngưỡng tuyệt đối 500ms nên không có nền thì vô hình. Đây là bằng chứng mạnh nhất cho lỗi số 1 của phase 5.
+- **S4 sinh cả cạnh lỗi**, không chỉ cạnh chậm: `frontend->adservice` 74.1% do nghẹt CPU làm quá hạn chờ.
+- **S5 nằm sát ngưỡng**: CPU 71% so với `ratio_alert = 0.7`. Rơi xuống 60% là mất nhãn `AT LIMIT` và S5 không còn phân biệt được với S1.
+- **Tín hiệu "pod RECREATED" rò rỉ giữa các ca** vì `is_clean()` không kiểm tuổi pod. Prompt của S4 mang dấu vết pod của S5 — một manh mối sai, và nó chính là chữ ký của S3.
+- **Dư âm độ trễ ăn 4 trên 6 lượt chờ của preflight** sau khi hoàn tác S1. Bộ chạy 75 ca của phase 6 dùng chính hàm này với cùng giới hạn.
+
+Đã sửa luôn: `INFRA_PODS` lọc thêm `mon-` và `prometheus-mon`, đóng nốt mục "cân nhắc lọc pod hạ tầng" trong danh sách việc phải làm ở phase 3. POD HEALTH giờ báo `all 11 pods ready`.
+
+**Nợ mang sang phase 6:** `is_clean()` chưa kiểm tuổi pod; ngân sách chờ của preflight quá sát với dư âm F1; `describe_resources` vẫn không lọc pod hạ tầng nên 3 trên 8 dòng "top consumers" là Grafana, Prometheus, Jaeger.
+
 ---
 
 ## Phase 3 — XAI (1,5 tuần)

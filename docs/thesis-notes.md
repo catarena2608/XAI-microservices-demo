@@ -440,6 +440,150 @@ Bài học chung để viết vào báo cáo: **hàm hoàn tác phải được 
 - Prompt phải nói rõ: thông lượng sụp thì cạnh vắng mặt không đồng nghĩa cạnh hỏng, và tuổi pod chỉ nói "vừa có thay đổi" chứ không nói thay đổi gì.
 - Cân nhắc lọc pod hạ tầng (`jaeger`, `opentelemetrycollector`) khỏi phần POD HEALTH để LLM không đổ lỗi nhầm.
 
+## PHASE 2 CHẠY LẠI TRÊN MÔI TRƯỜNG MỚI (2026-08-26)
+
+Toàn bộ 6 kịch bản được chạy lại từ đầu trên một máy khác hẳn. Không phải để kiểm tra lại
+injector, mà vì môi trường đã đổi và mọi số liệu nền phải đo lại theo.
+
+| | Lần đầu (2026-08-23) | Chạy lại (2026-08-26) |
+| --- | --- | --- |
+| Kubernetes | kind trong Docker Desktop | **k3s cài thẳng trên máy** |
+| Máy | Windows + WSL2, 15.3 GB | **VM Ubuntu 22.04 qua SSH, 4 vCPU / ~4 GB** |
+| Vào cổng | `extraPortMappings` của kind | **`kubectl port-forward`** (k3s không có ánh xạ cổng) |
+
+**Kết quả: 6/6 kịch bản đạt.** Cổng chặn phase 2 vẫn đạt — mọi lần tiêm sau đều bắt đầu
+được từ nền sạch, nghĩa là hàm hoàn tác đưa hệ thống về đúng trạng thái cũ.
+
+Ghi chú về ngân sách RAM: mục 2 KLTN.md dự trù 10 GB. Máy này chỉ có ~4 GB, và riêng
+Grafana 413Mi cộng Prometheus 403Mi đã hơn tổng RAM của cả 11 service nghiệp vụ. Phase 4
+dựng thêm 9 pod twin sẽ rất chật; tắt Grafana giải phóng được 413Mi mà không mất gì, vì
+đồ thị báo cáo vẽ bằng matplotlib từ `data/runs/`.
+
+**Phát hiện 3: con số 58.8% của S2 là sản phẩm của phép đo hỏng, không phải của sự cố.**
+
+Chờ đủ 330 giây thì cả ba cạnh đều ra **100%**, không phải 58.8%/26.5%/58.8%. Số cũ đo ở
+lần chờ 180 giây — chính lần đã sinh ra phát hiện 2 ở trên. Nghĩa là hai phát hiện này là
+một: số cũ chưa bao giờ mô tả sự cố, nó mô tả cửa sổ quan sát còn lẫn dữ liệu lúc khỏe.
+
+Bài học: **sửa nguyên nhân xong phải đo lại mọi con số đã lỡ ghi dưới nguyên nhân đó.**
+Con số sai vẫn nằm trong `scenarios.yaml` suốt ba ngày và vẫn được dùng làm chuẩn đối chiếu.
+
+**Phát hiện 4: ảnh nền biến S3 từ "không triệu chứng" thành ca phát hiện được.**
+
+Lần đầu S3 cho diff rỗng hoàn toàn, tín hiệu duy nhất là tuổi pod. Lần này có thêm:
+
+```
+SLOW calls:
+  frontend -> checkoutservice: 121.75ms, nen 29.4ms (cham gap 4.1 lan) [ON CRITICAL PATH]
+  max 1378.68ms  <- dung request roi vao luc pod bi giet
+```
+
+Cạnh này **121.75ms, nằm dưới ngưỡng tuyệt đối 500ms**. Nó chỉ bị bắt vì `SLOW_RATIO = 3.0`
+so với nền 29.4ms. Không truyền ảnh nền vào thì nó vô hình, và S3 trở lại thành ca trắng.
+
+Đây là bằng chứng thực nghiệm mạnh nhất cho lỗi số 1 của phase 5 (*agent chạy không có ảnh
+nền*): S1, S4, S5 chỉ chứng minh gián tiếp vì chúng vẫn có tín hiệu khác, còn S3 thì lần
+đầu **thật sự không có gì cả**. Nên đưa cặp so sánh này vào báo cáo.
+
+**Phát hiện 5: S4 sinh cả cạnh lỗi, không chỉ cạnh chậm.**
+
+```
+frontend -> adservice: ti le loi 74.1% (20/27 lan goi), luc khoe manh 0.0%
+```
+
+Frontend nghẹt CPU tới mức quá hạn chờ khi gọi adservice, nên chậm biến thành lỗi thật.
+`expected_symptom` cũ chỉ nói về chậm và CPU. Đã bổ sung.
+
+**Phát hiện 6: S5 nằm sát ngưỡng cảnh báo, và đó là rủi ro cho phase 6.**
+
+```
+productcatalogservice: using 0.007 of 0.010 cores (71% of limit)  <-- AT LIMIT
+ratio_alert = 0.7
+```
+
+71% so với ngưỡng 70%. Một lần lấy mẫu rơi xuống `0.006/0.010` là mất nhãn `AT LIMIT`, và
+khi đó **S5 không còn phân biệt được với S1** — đúng thứ mà cặp S1–S5 sinh ra để đo. Phase 6
+chạy 5 lần mỗi kịch bản nên khả năng có lần rơi dưới ngưỡng là có thật. Khi chấm điểm, nếu
+S5 đột nhiên tụt điểm thì kiểm chỗ này trước khi đổ cho model.
+
+Phía S1 thì ngược lại và rất dứt khoát — cùng ngày, cùng service:
+
+```
+S1 (do tre chu dich):  productcatalogservice  0.002 / 0.200 coi = 1%
+S5 (nghet CPU):        productcatalogservice  0.007 / 0.010 coi = 71%  <-- AT LIMIT
+```
+
+Triệu chứng bề mặt của hai ca gần như trùng nhau: cạnh chậm tụ về productcatalogservice,
+p95 frontend tăng vọt, thông lượng sụp. Khác biệt **duy nhất** đo được là dòng CPU. Nghĩa
+là với cặp S1–S5, `describe_cpu` không phải thông tin bổ trợ mà là **thông tin quyết định**
+— bỏ nó đi thì hai ca trở thành một, và root cause accuracy của cả hai rơi về mức đoán mò.
+Đây là lý do cụ thể vì sao món nợ dữ liệu CPU ở phase 3 đáng để trả.
+
+Số S1 đo được đầy đủ: 5 cạnh chậm (ba cạnh dự đoán ~6001ms đúng bằng `EXTRA_LATENCY`, cộng
+`frontend->checkoutservice` 16030ms và `frontend->recommendationservice` 6006ms), p95
+frontend 30000ms tức chạm trần thời gian chờ, thông lượng còn 36%.
+
+**Phát hiện 7 — nghiêm trọng nhất: tín hiệu "pod RECREATED" rò rỉ từ ca trước sang ca sau.**
+
+Snapshot của S4 chứa dấu vết của S5:
+
+```
+frontend-...: pod was RECREATED 332s ago                ← cua S4, dung
+productcatalogservice-...: pod was RECREATED 341s ago   ← DU AM CUA S5
+```
+
+Snapshot của S6 cũng chứa `frontend ... RECREATED 399s ago` còn sót từ S4.
+
+Nguyên nhân: `GraphDiff.is_clean()` chỉ kiểm `missing_edges`, `error_edges`, `slow_edges` —
+**không kiểm tuổi pod**. Preflight cho qua dù còn pod vừa tạo lại từ ca trước. Mà F1 và F4
+đều làm Kubernetes tạo lại pod, nên mọi ca F1/F4 đứng liền nhau đều dính.
+
+Hậu quả ở phase 3: prompt của S4 nói với LLM rằng `productcatalogservice` vừa được tạo lại —
+một manh mối sai, và nó chính là **chữ ký của S3**. Đây là kiểu nhiễu làm tụt root cause
+accuracy mà rất khó truy ngược, vì nhìn vào snapshot thì mọi thứ đều hợp lệ.
+
+Cách phòng ngay, không cần sửa code: **nghỉ 2 phút sau mỗi `--revert` của kịch bản F1/F4**,
+để tuổi pod vượt ngưỡng 600 giây trước khi chụp nền ca sau. Cách sửa gốc là cho `is_clean()`
+kiểm cả tuổi pod — chưa làm, ghi vào nợ phase 6.
+
+**Phát hiện 8: dư âm độ trễ ăn gần hết ngân sách chờ của preflight.**
+
+Sau khi hoàn tác S1, preflight phải thử 4 lần trên tối đa 6 mới thấy nền sạch:
+
+```
+lan 1:  6002ms / 15028ms      <- 6002ms chinh la EXTRA_LATENCY=6s cua S1
+lan 2:  2309ms /  5026ms
+lan 3:  1168ms /  2355ms
+lan 4:  SACH
+```
+
+Cửa sổ quan sát 300 giây phải trôi hết thì số cũ mới rụng, và nhịp rụng khoảng một nửa mỗi
+phút. Preflight chỉ có 6 lượt × 60 giây = 6 phút, tức **vừa đủ chứ không dư**.
+
+Bộ chạy 75 ca của phase 6 dùng chính hàm `wait_for_clean_baseline` này với cùng giới hạn.
+Ca nào đứng ngay sau S1 hoặc S6 sẽ đốt gần hết ngân sách và thỉnh thoảng trượt — giữa một
+lượt chạy dài thì đó là ca hỏng phải chạy lại.
+
+**Đã làm luôn trong đợt này:** mở rộng `INFRA_PODS` thêm `mon-` và `prometheus-mon` để lọc
+5 pod của kube-prometheus-stack khỏi POD HEALTH, đóng nốt mục cuối trong danh sách "việc
+phải làm ở phase 3" ở trên. Trên máy 4 GB, Grafana 413Mi và Prometheus 403Mi là hai ứng
+viên `OOMKilled` sáng giá nhất — chúng khởi động lại giữa lượt tiêm là LLM có cớ đổ lỗi cho
+đúng cái đang đo đạc nó. POD HEALTH giờ báo `all 11 pods ready`, khớp đúng 11 service
+nghiệp vụ.
+
+**Nợ mang sang phase 6, từ đợt chạy lại này:**
+
+- `is_clean()` chưa kiểm tuổi pod → dấu vết pod tạo lại rò rỉ giữa các ca (phát hiện 7).
+- Ngân sách chờ của preflight quá sát với dư âm của F1 (phát hiện 8).
+- `describe_resources` vẫn không lọc pod hạ tầng, nên 3 trên 8 dòng "top consumers" là
+  Grafana, Prometheus, Jaeger — LLM chỉ thực sự nhìn thấy 5 pod nghiệp vụ.
+- Ngưỡng CPU của S5 quá sát (phát hiện 6).
+- Nhiễu nhỏ trong prompt: khi thông lượng sụp dưới 50% mà không cạnh nào thật sự biến mất,
+  `describe_diff` vẫn in cảnh báo *"Treat MISSING calls below as weak evidence"* trong khi
+  bên dưới không có mục MISSING nào. Thấy ở S1 (sụp 36%, 0 cạnh mất). Không sai, nhưng là
+  một câu nói về thứ không tồn tại — cùng họ với lỗi *prompt khẳng định điều sai sự thật*
+  ở phase 3. Chỉ nên in cảnh báo khi `missing_edges` không rỗng.
+
 ### Phase 3 — XAI
 
 **Ngày 2026-08-23 — code phase 3 xong, chờ khóa API để chạy.**
