@@ -832,6 +832,138 @@ Hệ quả thực tiễn nên viết vào phần kết luận: **đầu tư vào
 - *Lan truyền 0.767.* Phần lớn do S4 luôn bằng 0 vì lý do kỹ thuật: `expected_propagation` của F4-frontend là danh sách rỗng (frontend là cửa ngõ, không service nội bộ nào gọi nó) còn model liệt kê 6 callee. Quy tắc dạy model trả về danh sách rỗng nằm trong gói v5 đã bị loại vì làm tổng thể tệ đi. Món nợ phase 6: tách hai quy tắc của v5 ra thử riêng từng cái.
 - *Hành động 86.7%, giảm nhẹ so với 90.0%.* Chỗ trừ điểm nằm ở S1: model chọn `scale_up` cho lỗi độ trễ chèn bằng biến môi trường, trong khi đáp án là `adjust_resources`, `restart_pod` hoặc `rollback`. Quy tắc sửa việc này cũng nằm trong gói v5 bị loại.
 
+## PHASE 3 CHẠY LẠI: ĐỔI CẢ MÔI TRƯỜNG LẪN MODEL (2026-08-29)
+
+Chạy lại 6 kịch bản × 5 lần = 30 ca trên snapshot mới sinh từ k3s, bằng một model khác,
+**prompt không sửa một chữ**. Đây là phép thử cho đúng cảnh báo overfitting mà KLTN-PLAN
+ghi ở cuối phase 3 gốc: *"prompt được chỉnh bằng cách soi chính 6 ca này"*.
+
+| | Lần gốc (2026-08-23) | Chạy lại (2026-08-29) |
+| --- | --- | --- |
+| Môi trường | kind trên Windows | **k3s trên VM 4 vCPU / 4 GB** |
+| Model | `gpt-4.1-mini` (OpenAI) | **`openai/gpt-oss-120b` (Groq, gói miễn phí)** |
+| Prompt | — | không đổi |
+| **Root cause** | **100%** (sd 0) | **100%** (sd 0) |
+| Lan truyền | 0.767 | 0.833 |
+| Loại lỗi | 100% | 70% |
+| Hành động | 86.7% | 60% |
+| Tin cậy TB | — | 0.92 |
+| Thời gian | — | 1109s cho 30 ca |
+
+**Kết quả quan trọng nhất: root cause 100% sống sót qua cả hai thay đổi.** Hai biến đổi
+cùng lúc mà chỉ số chính không suy chuyển, độ lệch chuẩn vẫn 0. Cảnh báo overfitting coi
+như được trả lời: prompt không khớp riêng 6 ca cũ, nó tổng quát hóa sang môi trường khác
+và model khác.
+
+**Phát hiện 9 — chẩn đoán không nhạy với model, chọn hành động thì có.**
+
+```
+root cause   100%  ->  100%   khong doi
+hanh dong   86.7%  ->   60%   tut 27 diem
+```
+
+Cùng prompt, cùng dữ liệu cùng loại, đổi model thì phần *nhận ra chuyện gì đang xảy ra*
+giữ nguyên, còn phần *quyết định làm gì* sụp. Điều này nói rằng hai năng lực đó tách rời
+nhau, và **chọn hành động mới là phần khó**, không phải chẩn đoán.
+
+Hệ quả cho đề tài: đây là lập luận trực tiếp cho sự tồn tại của twin. Nếu điểm yếu nằm ở
+chẩn đoán thì cách chữa là model mạnh hơn hoặc telemetry tốt hơn. Nhưng điểm yếu nằm ở
+hành động, mà hành động thì **thi hành lên hệ thống thật mới biết đúng sai** — đúng chỗ
+twin xen vào. Cũng có nghĩa là chạy phase 6 trên model rẻ sẽ cho harmful action count cao
+hơn model mạnh, nên phải ghi rõ model nào trong mọi bảng số.
+
+**Phát hiện 10 — S5 mất nhãn loại lỗi vì trần CPU tụt 14 điểm phần trăm.**
+
+```
+                                        lan goc      chay lai
+S4 frontend               CPU vs tran      99%   ->     96%     loai loi 100% -> 100%
+S5 productcatalogservice  CPU vs tran      85%   ->     71%     loai loi 100% ->   0%
+                                                nguong ratio_alert = 0.7
+```
+
+Cùng loại lỗi F4, cùng prompt, cùng ngưỡng. S4 vẫn cách xa ngưỡng nên nhãn giữ nguyên;
+S5 rơi từ 85% xuống 71% — chỉ còn **1 điểm phần trăm trên ngưỡng** — và loại lỗi sai
+**cả 5 lần**. Nhãn `AT LIMIT` vẫn được in ra, nhưng model không đủ tin nó để gọi tên
+`resource_exhaustion`, mà bám vào triệu chứng chậm bề mặt (giống S1).
+
+Đây là xác nhận thẳng cho phát hiện 6 của phase 2, vốn chỉ mới là dự đoán: *"lần lấy mẫu
+nào rơi xuống 0.006/0.010 là mất nhãn AT LIMIT và S5 không còn phân biệt được với S1"*.
+Thực tế còn nhạy hơn dự đoán — **không cần mất nhãn, chỉ cần nhãn yếu đi là đủ**.
+
+Đáng chú ý: S5 vẫn **root cause 100% và hành động 100%**. Model tìm đúng service và đề
+xuất đúng `adjust_resources`, chỉ gọi sai tên loại lỗi. Nên đây là hỏng ở tầng *phân loại*,
+không phải ở tầng *chẩn đoán* — và với đề tài lấy hành động làm trọng tâm thì nó ít nghiêm
+trọng hơn vẻ ngoài của con số 0%.
+
+**Phát hiện 11 — agent chưa biết cách không làm gì.**
+
+S3 sinh ra để trả lời đúng một câu hỏi, theo mô tả trong `scenarios.yaml`: *"kịch bản KIỂM
+TRA AGENT CÓ BIẾT KHÔNG LÀM GÌ hay không"*. Đáp án là `no_action`.
+
+```
+S3  hanh dong dung 20%   (1 tren 5 lan)
+    loai loi dung  20%
+```
+
+Bốn trên năm lần, XAI đề xuất can thiệp vào một hệ thống **đã tự hồi phục**. Với đề tài lấy
+*harmful action count* làm trái tim, đây là con số phải đưa vào báo cáo: phần lớn hành động
+thừa không đến từ chẩn đoán sai, mà từ **thiên hướng phải làm gì đó**.
+
+Nhắc lại phát hiện của phase 5 về hành động vô ích: sau `scale_up` ở ca S1, số cạnh chậm
+tăng từ 5 lên 15. Hành động thừa **không trung tính**.
+
+**Bảng hành động đúng theo kịch bản** — chỗ này mới là nơi đọc ra vấn đề:
+
+```
+S4 100%   S5 100%   S2 80%   S6 60%   S3 20%   S1 0%
+```
+
+S1 sai **cả 5 lần**, xác nhận món nợ phase 5 không phải dao động mà là lỗi hệ thống: model
+chọn `scale_up` cho độ trễ chèn mỗi lần gọi, mà thêm bản sao không gỡ được thứ nằm trong
+mỗi lần gọi.
+
+Một ca S2 lẻ chọn `restart_pod` với lý do tự mâu thuẫn, đáng chép nguyên văn vào báo cáo:
+
+> *"No pods are running for currencyservice; restarting (or recreating) the deployment will
+> bring the service back online."*
+
+Tiền đề đúng — không còn pod nào. Kết luận sai vì chính tiền đề đó: `restart_pod` xóa một
+pod để Kubernetes tạo lại, mà `replicas = 0` thì không có pod để xóa và ReplicaSet cũng
+không được phép tạo pod mới. Chỉ `scale_up` sửa được. Model tự gán `risk_class: hard` cho
+hành động này, nên theo thiết kế phase 5 nó sẽ phải qua twin trước — và twin sẽ chặn, vì
+hành động đó thật sự không làm gì cả. Đây là ví dụ sạch nhất hiện có cho cơ chế của đề tài.
+Nhưng chỉ 1 trên 5 lần, nên **không** được viết thành "XAI lạm dụng restart_pod".
+
+**Lan truyền 0.833: đọc kèm số thứ hai, đừng để nó đứng một mình.**
+
+```
+S1 1.00   S2 1.00   S3 1.00   S5 1.00   S6 1.00   S4 0.00
+(5 x 1.00 + 0) / 6 = 0.833
+```
+
+S4 bằng 0 vì lý do kỹ thuật đã ghi ở lần gốc: `expected_propagation` của F4-frontend là
+danh sách rỗng, còn model liệt kê các callee. **Bỏ S4 ra thì lan truyền = 1.000, độ lệch
+chuẩn 0, trên 25 ca** — và đó là con số mô tả đúng năng lực model. Báo cáo nên ghi cả hai
+kèm lời giải thích, vì 0.833 mô tả một chỉ số không đo được cho kịch bản cửa ngõ.
+
+**Hai ghi chú kỹ thuật:**
+
+- *Token thật 4984 mỗi lượt, gấp hơn hai lần ước tính theo ký tự (2343).* `overhead = 3500`
+  trong `cmd_estimate` là phỏng đoán thấp cho system prompt cộng 2 ví dụ few-shot. Dùng số
+  4984 cho phần chi phí trong báo cáo. Trên trần 8000 token/phút của Groq, con số này cho
+  khoảng 1,5 lượt mỗi phút — 30 ca hết 1109 giây, khớp.
+- *Groq chấp nhận `json_schema` nghiêm ngặt.* Không thấy dòng hạ cấp `json_object` nào, nên
+  JSON được ép đúng schema ngay ở tầng API chứ không chỉ nhờ prompt. Đường hạ cấp trong
+  `reasoner.py` vẫn còn đó cho nhà cung cấp khác.
+
+**Nợ mang sang phase 6, cập nhật sau lần chạy này:**
+
+- S1 chọn sai hành động **5/5** — không còn là dao động, phải xử bằng prompt. Nhớ gói v5
+  từng làm tụt 90% xuống 66.7%, nên tách từng quy tắc thử riêng.
+- S3 `no_action` chỉ 20% — ảnh hưởng trực tiếp tới harmful/wasted action count.
+- Ngưỡng `ratio_alert = 0.7` quá sát với S5 (phát hiện 10).
+- Chỉ số lan truyền không định nghĩa được cho kịch bản cửa ngõ (S4).
+
 ### Phase 4 — Digital Twin
 
 **Bước 4.0 — trả nợ dữ liệu CPU, và chẩn đoán đầu tiên của tớ sai.**

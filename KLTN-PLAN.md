@@ -247,6 +247,29 @@ Tiêm lại S4 và S5 để snapshot có dữ liệu CPU, rồi chạy lại v�
 - Bảng so sánh Groq với OpenAI: Groq gói miễn phí chỉ cho 8000 token mỗi phút mà một lần chẩn đoán tốn khoảng 5900, nên một loạt 30 ca mất trên 30 phút và hôm nay đã cạn hạn mức. Tính vào lịch phase 6.
 - `expected_propagation` của F4-frontend là danh sách rỗng vì `frontend` là cửa ngõ, không service nội bộ nào gọi nó.
 
+### Chạy lại trên k3s bằng model khác (2026-08-29) — CỔNG CHẶN ĐẠT, root cause 100%
+
+30 ca trên snapshot mới sinh từ k3s, model `openai/gpt-oss-120b` qua Groq gói miễn phí, **prompt không sửa một chữ**. Chi tiết ở `docs/thesis-notes.md`.
+
+| | Lần gốc (gpt-4.1-mini, kind) | Chạy lại (gpt-oss-120b, k3s) |
+| --- | --- | --- |
+| Root cause | 100% (sd 0) | **100% (sd 0)** |
+| Lan truyền | 0.767 | 0.833 (bỏ S4 ra: **1.000**) |
+| Loại lỗi | 100% | 70% |
+| Hành động | 86.7% | 60% |
+
+**Cảnh báo overfitting đã được trả lời.** Đổi cả môi trường lẫn model mà root cause không suy chuyển, nghĩa là prompt không khớp riêng 6 ca cũ.
+
+Ba phát hiện mới:
+
+- **Chẩn đoán không nhạy với model, chọn hành động thì có.** Root cause giữ 100%, hành động tụt 86.7% → 60%. Hai năng lực này tách rời, và **chọn hành động mới là phần khó**. Đây là lập luận trực tiếp cho sự tồn tại của twin: điểm yếu nằm ở hành động, mà hành động thì thi hành lên hệ thống thật mới biết đúng sai. Hệ quả: mọi bảng số phase 6 phải ghi rõ model.
+- **S5 mất nhãn loại lỗi khi trần CPU tụt từ 85% xuống 71%** (ngưỡng 0.7), sai cả 5 lần — xác nhận thẳng phát hiện 6 của phase 2, và còn nhạy hơn dự đoán: không cần mất nhãn `AT LIMIT`, chỉ cần nhãn yếu đi là đủ. S5 vẫn đúng root cause và đúng hành động, nên đây là hỏng ở tầng phân loại.
+- **S3 chọn `no_action` chỉ 20%.** Bốn trên năm lần agent can thiệp vào hệ thống đã tự hồi phục. Đi thẳng vào chỉ số harmful/wasted action của mục 8.
+
+Hành động đúng theo kịch bản: `S4 100% · S5 100% · S2 80% · S6 60% · S3 20% · S1 0%`. **S1 sai 5/5** — món nợ phase 5 không phải dao động mà là lỗi hệ thống.
+
+Đã trả một phần nợ: bảng so sánh Groq với OpenAI giờ có số của Groq. Token thật đo được là **4984 mỗi lượt**, gấp hơn hai lần ước tính theo ký tự — dùng số này cho phần chi phí.
+
 ---
 
 ## Phase 4 — Digital Twin (1,5 tuần)

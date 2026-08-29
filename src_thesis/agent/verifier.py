@@ -92,6 +92,31 @@ class ServiceDelta:
             return 0.0
         return (self.p95_after - self.p95_before) / self.p95_before
 
+    @property
+    def mean_rate(self) -> float:
+        """Lưu lượng trung bình giữa hai lần đo.
+
+        Dùng trung bình chứ không dùng `rate_after`: khi hành động gỡ được nút thắt
+        thì thông lượng bật lên, và lấy riêng con số sau sẽ thổi phồng trọng số của
+        đúng service vừa được cứu.
+        """
+        return (self.rate_before + self.rate_after) / 2
+
+    @property
+    def wait_cost_delta(self) -> float:
+        """Thay đổi tổng thời gian chờ, tính bằng ms trên mỗi giây.
+
+        Âm là hệ thống bắt người dùng chờ ít đi. Cân theo lưu lượng để một service
+        vốn đã nhanh và ít khách không có trọng số ngang một service đang nghẽn cổ
+        chai — đây chính là chỗ quy tắc đếm đầu người sai.
+        """
+        return (self.p95_after - self.p95_before) * self.mean_rate
+
+    @property
+    def wait_cost_before(self) -> float:
+        """Tổng thời gian chờ mỗi giây TRƯỚC hành động. Dùng làm mẫu số."""
+        return self.p95_before * self.mean_rate
+
     def describe(self) -> str:
         return (f"{self.service}: loi {self.error_before * 100:.1f}% -> "
                 f"{self.error_after * 100:.1f}%, "
@@ -249,6 +274,29 @@ class TwinVerifier:
             elif d.p95_ratio >= MIN_LATENCY_RATIO:
                 degraded.append(svc)
 
+        # TONG THOI GIAN CHO, thay cho phep dem dau nguoi.
+        #
+        # VI SAO: do fidelity S5 ngay 2026-08-29 lech vi ly do nay. `cartservice`
+        # doi p95 tu 8.33ms len 20.50ms — 12 mili giay tren mot service von tra loi
+        # trong mot chu so — nhung ti le la +146%, vuot xa MIN_LATENCY_RATIO, nen no
+        # duoc ghi vao `degraded` voi TRONG SO NGANG frontend vua cai thien 2921ms.
+        # Ket qua: phan quyet hoa, tra ve no_change cho mot hanh dong da go han nut
+        # that. Nguong thuan tuong doi lam service cang nhanh cang nhay voi nhieu,
+        # vi mau so cang nho.
+        #
+        # Cach sua: van dung 15% do, nhung ap len TONG thoi gian cho da can theo luu
+        # luong, khong ap rieng tung service. Khong them hang so moi.
+        #
+        # Cung mot nguyen tac voi MIN_RATE_FOR_VERDICT o tren, chi la thap hon mot
+        # tang: "khong du co so de ket luan" khac "khong co thay doi".
+        voting = [d for d in deltas if d.service not in low_traffic]
+        cost_delta = sum(d.wait_cost_delta for d in voting)
+        cost_base = sum(d.wait_cost_before for d in voting)
+        deadband = cost_base * MIN_LATENCY_RATIO
+        small = abs(cost_delta) < deadband
+        cost_note = (f"tong thoi gian cho doi {cost_delta:+.0f} ms/s "
+                     f"tren nen {cost_base:.0f} ms/s")
+
         if not deltas:
             return Verdict(
                 verdict="no_change",
@@ -265,10 +313,22 @@ class TwinVerifier:
             )
 
         if degraded and not improved:
-            return Verdict("worse", f"xau di o {', '.join(degraded)}",
+            if small:
+                return Verdict(
+                    "no_change",
+                    f"cham di o {', '.join(degraded)} nhung {cost_note}, "
+                    f"duoi 15% nen chua du de ket luan",
+                    deltas, improved, degraded)
+            return Verdict("worse", f"xau di o {', '.join(degraded)}, {cost_note}",
                            deltas, improved, degraded)
         if improved and not degraded:
-            return Verdict("better", f"tot len o {', '.join(improved)}",
+            if small:
+                return Verdict(
+                    "no_change",
+                    f"nhanh len o {', '.join(improved)} nhung {cost_note}, "
+                    f"duoi 15% nen chua du de ket luan",
+                    deltas, improved, degraded)
+            return Verdict("better", f"tot len o {', '.join(improved)}, {cost_note}",
                            deltas, improved, degraded)
         if improved and degraded:
             # Vua tot vua xau: quyet dinh theo TI LE LOI, vi lam mat don hang nang
@@ -288,10 +348,23 @@ class TwinVerifier:
                     "better",
                     f"ti le loi giam o {', '.join(err_improved)}, du co cho cham di",
                     deltas, improved, degraded)
+            # Vua tot vua xau, ti le loi khong doi -> can theo DO LON.
+            if small:
+                return Verdict(
+                    "no_change",
+                    f"vua nhanh len o {', '.join(improved)} vua cham di o "
+                    f"{', '.join(degraded)}; {cost_note}, duoi 15% nen hoa",
+                    deltas, improved, degraded)
+            if cost_delta < 0:
+                return Verdict(
+                    "better",
+                    f"nhanh len o {', '.join(improved)} thang phan cham di o "
+                    f"{', '.join(degraded)}: {cost_note}",
+                    deltas, improved, degraded)
             return Verdict(
-                "no_change",
-                f"vua nhanh len o {', '.join(improved)} vua cham di o "
-                f"{', '.join(degraded)}, khong ben nao thang ro",
+                "worse",
+                f"cham di o {', '.join(degraded)} thang phan nhanh len o "
+                f"{', '.join(improved)}: {cost_note}",
                 deltas, improved, degraded)
 
         return Verdict("no_change",
