@@ -335,6 +335,27 @@ Twin và production còn khớp cả **danh sách service tốt lên**, tức l�
 
 **Bằng chứng bản sửa verifier hoạt động đúng.** Chấm điểm lại loạt S4 cũ bằng `scripts/rescore_fidelity.py` (không đụng cluster, vì file kết quả lưu đủ số liệu thô): phía production chuyển từ `no_change` sang `better` cho `adjust_resources` và sang `worse` cho `restart_pod` — đúng cả hai. Phía twin vẫn `no_change` vì tải quá thấp, nên phải chạy lại.
 
+### Chạy lại trên k3s (2026-08-29) — cổng chặn ĐẠT, fidelity 50% → 83%
+
+Chi tiết đầy đủ ở `docs/thesis-notes.md`. Tóm tắt:
+
+**Cổng chặn ĐẠT.** Twin thực tế là **12 pod, 370–379 MiB, dựng 71–91 giây** (đính chính con số 9 pod / 169–306 MiB / 34 giây ở trên: twin đã được thêm lại `adservice` và `recommendationservice`). 3 vòng liên tiếp không rò rỉ RAM. Twin chạy **1.05–1.19 lần** production, tức điều kiện tiên quyết đã đạt trên môi trường mới.
+
+**Fidelity lần đầu chỉ 3/6 = 50%**, và cả ba lần lệch đều theo cùng một chiều: twin kém nhạy hơn production.
+
+**Nguyên nhân không nằm ở twin mà ở hàm phán quyết.** Số thô của twin và production khớp nhau dưới 1% ở các service chính; chỗ lệch là `cartservice` chênh **12 mili giây** — đủ để lật phán quyết, vì `MIN_LATENCY_RATIO` là ngưỡng thuần tương đối không có sàn tuyệt đối, nên service càng nhanh càng nhạy với nhiễu. Verifier cân frontend cải thiện 2921ms ngang cartservice xấu đi 12ms.
+
+**Đã sửa:** phán quyết theo **tổng thời gian chờ** (`Δp95 × lưu lượng trung bình`), vùng chết vẫn là 15% có sẵn, áp lên tổng thay vì lên từng service. Không thêm hằng số mới. Logic tỉ lệ lỗi giữ nguyên. Chấm lại: **50% → 83% (5/6)**, chỉ 2 phán quyết đổi, đúng hai cái dự đoán trước.
+
+**Nghiệm thu ngoài mẫu:** `scripts/transient_check.py` (mới) sinh một ca mà luật cũ sẽ tuyên `better` cho hành động làm tổng thời gian chờ **tăng 4%**; luật mới chặn đúng. Dữ liệu này sinh sau khi luật được viết.
+
+**Hai hạn chế còn lại, đưa vào báo cáo:**
+
+- **S1 `rollback` lệch thật:** production xấu đi vì tỉ lệ lỗi tăng, twin không tái hiện được. Không sửa bằng ngưỡng. Twin thỉnh thoảng để lọt hành động có hại — đúng thứ phase 6 sinh ra để đo, và giả thuyết mục 0 nói *ít hơn* chứ không nói *không có*.
+- **S4 `restart_pod` ra `better` không tái lập được:** chạy lại cùng kịch bản cùng hành động cho `no_change` với số liệu thô khác hẳn. Là nhiễu giữa các lần chạy, không phải lỗ hổng cố định; xử được bằng yêu cầu chạy 5 lần mỗi kịch bản.
+
+**Ghi chú phương pháp:** ba phase liên tiếp, thứ hỏng là **thước đo chứ không phải đối tượng đo** — ngưỡng CPU 0.7 quá sát ở phase 2, `expected_propagation` rỗng ở phase 3, đếm đầu người ở phase 4. Cả ba đều cho số trông hợp lý và không ném lỗi. Đây là lý do phải giữ `deltas` thô trong mọi file kết quả.
+
 ---
 
 ## Phase 5 — ReAct loop (1 tuần)

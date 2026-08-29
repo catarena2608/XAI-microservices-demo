@@ -1337,6 +1337,130 @@ Cùng bộ code, cùng kịch bản, cùng hệ thống. Khác biệt duy nhất
 
 **Đây là bài học đáng giá nhất của cả phase 4, và nên đưa vào chương phương pháp:** một hệ đo lường hỏng không báo lỗi, không ném ngoại lệ, không để lại dấu vết nào. Nó chỉ lặng lẽ cho ra những con số trông hoàn toàn hợp lý. Nếu tớ dừng lại ở loạt đầu tiên, báo cáo sẽ ghi "twin fidelity 50%, twin phản ứng mạnh hơn với sự cố ngắn hạn" — một kết luận nghe rất khoa học, có số liệu hậu thuẫn, và **hoàn toàn sai**.
 
+## PHASE 4 CHẠY LẠI TRÊN K3S (2026-08-29): FIDELITY 50%, TÌM RA LỖI THƯỚC ĐO, LÊN 83%
+
+Chạy lại toàn bộ phase 4 trên VM k3s 4 vCPU / 4 GB. Đây là ngày dài nhất của dự án, và
+chuỗi lập luận đáng ghi hơn cả con số cuối.
+
+**Đính chính số liệu cũ.** Twin bây giờ là **12 pod, 370–379 MiB, dựng 71–91 giây, xóa
+20–22 giây**. Ghi chú cũ ghi 9 pod / 169–306 MiB / dựng 34 giây — sai vì twin đã được
+thêm lại `adservice` và `recommendationservice`, và vì VM này yếu hơn máy cũ. Vẫn nhẹ hơn
+dự trù 3.8 GB ở mục 2 KLTN.md hơn 10 lần, nên luận điểm cũ đứng vững.
+
+**Cổng chặn ĐẠT:** 3 vòng dựng–đo–xóa liên tiếp, RAM đầu 790 MiB, cuối 1026 MiB — không
+rò rỉ. Đặt được 16 đơn hàng trong twin, 279/279 request trả 200.
+
+**Điều kiện tiên quyết đạt trên môi trường mới:** twin chạy **1.05–1.19 lần** production
+(`twin-frontend` 2.99 req/s so với `frontend` 2.77). Lần gốc chỗ này hỏng nặng nhất —
+twin chỉ đạt 0.23 lần production. Tách tên bằng tiền tố `twin-` cũng hoạt động chính xác,
+kiểm bằng truy vấn PromQL liệt kê mọi `service_name`.
+
+**Phát hiện 12 — chỉ số nhiễu hơn thứ nó đo thì không dùng được.**
+
+`twin.py --cycle 3` in "twin ăn thêm" ba lần ra ba số khác nhau cho cùng một việc:
+`-115 MiB`, `+196 MiB`, `+83 MiB`. Số âm nghĩa là RAM *tăng* sau khi thêm 12 pod.
+
+Nguyên nhân: `free_memory_mib()` đo RAM trống của cả node, mà page cache dao động mạnh
+hơn lượng twin chiếm. Con số đáng tin là `twin: RAM 370 MiB` đo trực tiếp trên namespace,
+ổn định 370/372/379 qua ba vòng. Bài học: một chỉ số vẫn in ra số đẹp khi nó vô dụng.
+
+**Fidelity lần đầu: 3/6 = 50%** (lần gốc 6/6 = 100%).
+
+```
+S4  adjust_resources  dung    twin better      production better      KHOP
+S4  restart_pod       sai     twin better      production better      KHOP
+S1  rollback          dung    twin better      production WORSE       LECH
+S1  scale_up          sai     twin no_change   production no_change   KHOP
+S5  adjust_resources  dung    twin NO_CHANGE   production BETTER      LECH
+S5  restart_pod       sai     twin NO_CHANGE   production WORSE       LECH
+```
+
+**Cả ba lần lệch, twin đều KÉM NHẠY hơn production.** Không lần nào ngược lại. Nhiễu ngẫu
+nhiên thì lệch cả hai chiều; đây là thiên lệch có hệ thống.
+
+**Phát hiện 13 — hàm phán quyết đếm đầu người thay vì cân độ lớn. Đây là gốc của vấn đề.**
+
+Mổ số thô của cặp S5 `adjust_resources` thì twin và production gần như trùng nhau:
+
+```
+                        TWIN                        PRODUCTION
+frontend         p95  3016.67 → 94.93  (-96.9%)   2714.47 → 91.83  (-96.6%)
+productcatalog   p95    90.25 →  0.48  (-99.5%)     95.84 →  0.48  (-99.5%)
+cartservice      p95     8.33 → 20.50  (+146%)       5.83 →  4.56  (-21.8%)
+```
+
+Sai lệch dưới 1% ở hai service chính. **Twin tái hiện production rất tốt.** Khác biệt duy
+nhất là `cartservice` lệch **12 mili giây** — và đúng 12ms đó lật phán quyết từ `better`
+sang `no_change`, vì `MIN_LATENCY_RATIO = 0.15` là ngưỡng **thuần tương đối, không có sàn
+tuyệt đối**. Service càng nhanh thì mẫu số càng nhỏ, càng nhạy với nhiễu. Verifier đặt lên
+cùng bàn cân: frontend cải thiện 2921ms, cartservice xấu đi 12ms, hoà.
+
+Chính chú thích của `MIN_RATE_FOR_VERDICT` trong code đã mô tả đúng lỗi này ở một tầng
+khác — *"đây là hai chuyện khác nhau và gộp chung lại thì phán quyết sai"* — nhưng nguyên
+tắc đó mới chỉ được áp cho chiều lưu lượng, chưa áp cho chiều độ trễ.
+
+**Cách sửa: cân theo tổng thời gian chờ.** Mỗi service đóng góp `Δp95 × lưu lượng trung
+bình` (ms trên mỗi giây), phán quyết theo tổng, vùng chết vẫn là **15% có sẵn** áp lên tổng
+thay vì lên từng service. Không thêm hằng số tuỳ ý nào. Logic tỉ lệ lỗi giữ nguyên hoàn
+toàn — mất đơn hàng vẫn nặng hơn chậm đơn hàng.
+
+Dùng trung bình `(rate_before + rate_after) / 2` chứ không dùng `rate_after`: khi hành động
+gỡ được nút thắt thì thông lượng bật lên, lấy riêng con số sau sẽ thổi phồng trọng số của
+đúng service vừa được cứu.
+
+**Chấm lại bằng `rescore_fidelity.py`: 50% → 83% (5/6).** Chỉ **2 phán quyết đổi**, đúng hai
+cái dự đoán trước:
+
+```
+S5 adjust  twin        no_change → better      (giờ khớp production)
+S5 restart production  worse     → no_change   (giờ khớp twin)
+```
+
+Bốn phán quyết còn lại giữ nguyên — bản sửa nhắm đúng chỗ hỏng chứ không đảo lộn mọi thứ.
+
+**Phát hiện 14 — nghiệm thu NGOÀI MẪU cho bản sửa, đến từ một phép thử khác.**
+
+Điểm yếu của mọi bản sửa ngưỡng là nó được thiết kế sau khi nhìn chính dữ liệu nó sửa. Bằng
+chứng độc lập đến từ `scripts/transient_check.py` chạy sau đó, trên số liệu sinh mới:
+
+```
+S4 restart_pod:  cartservice nhanh lên, KHÔNG service nào xấu đi
+                 tổng thời gian chờ +561 ms/s trên nền 13806 (+4.1%)
+   luật cũ  -> better    (có cải thiện, không có suy giảm)
+   luật mới -> no_change (tổng thực ra xấu đi 4%)
+```
+
+Luật cũ sẽ tuyên `better` cho một hành động làm hệ thống chậm đi. Luật mới chặn đúng, **trên
+dữ liệu sinh sau khi luật được viết**. Đây là nghiệm thu mạnh hơn bốn phép thử S5 dùng để
+thiết kế.
+
+**Hai hạn chế còn lại, phải ghi vào báo cáo:**
+
+*1. S1 `rollback`: twin=better, production=worse — đây là lỗi fidelity THẬT.* Production xấu
+đi vì **tỉ lệ lỗi** tăng ở frontend (mất đơn hàng nặng hơn chậm đơn hàng), mà twin không tái
+hiện được cú tăng lỗi đó. Không sửa bằng ngưỡng được. Twin thỉnh thoảng để lọt hành động có
+hại — và đó chính là thứ phase 6 sinh ra để đo, chứ không phải thứ phải giấu đi. Giả thuyết
+mục 0 nói *ít hành động sai hơn*, không nói *không có hành động sai nào*.
+
+*2. S4 `restart_pod` ra `better` KHÔNG tái lập được.* Lượt fidelity cho `better` ở cả hai môi
+trường; chạy lại cùng kịch bản cùng hành động hôm sau cho `no_change`, và số liệu thô khác
+hẳn — không phải do đổi luật, vì chấm lại dữ liệu cũ vẫn ra `better`. Nghĩa là `better` kia
+là sản phẩm của một lần đo, không phải tính chất của hành động. Nhiễu giữa các lần chạy, xử
+được bằng chính yêu cầu chạy 5 lần mỗi kịch bản ở mục 8.
+
+**Ghi chú phương pháp, đủ để viết thành một đoạn trong chương phương pháp.** Ba lần liên
+tiếp, thứ hỏng là **thước đo chứ không phải đối tượng đo**:
+
+```
+phase 2   nguong CPU 0.7 qua sat  ->  S5 mat nhan AT LIMIT
+phase 3   expected_propagation rong  ->  S4 lan truyen luon bang 0
+phase 4   dem dau nguoi thay vi can do lon  ->  fidelity tut tu 83% xuong 50%
+```
+
+Cả ba đều cho ra con số trông hợp lý, không ném lỗi, không để lại dấu vết. Và cả ba chỉ lộ
+ra khi đối chiếu số thô với trực giác vật lý về hệ thống. Đây là lý do phải giữ `deltas` thô
+trong mọi file kết quả, và là lý do `rescore_fidelity.py` tồn tại.
+
 ### Phase 5 — ReAct loop
 
 **Trạng thái: code xong (5.1 đến 5.4), CHƯA chạy kiểm thử trên hệ thống có lỗi.**
