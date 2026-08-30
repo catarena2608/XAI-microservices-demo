@@ -86,6 +86,15 @@ class RunAborted(Exception):
     """Cả phiên phải dừng — hệ thống không dọn sạch được, ca sau sẽ bị nhiễm."""
 
 
+# Chờ tối đa chừng này giây cho pod đang khởi động lại, trước khi coi là hệ thống
+# hỏng. Lấy đúng con số `wait_ready(timeout=180)` mà `inject.py` đã dùng khi hoàn
+# tác, để hai chỗ cùng một kỳ vọng về thời gian pod sẵn sàng.
+#
+# Không có nó thì mọi ca S1 và S5 đều làm dừng phiên: dọn dẹp gỡ biến môi trường,
+# Kubernetes tạo lại pod, và ca kế tiếp kiểm ngay lập tức rồi tuyên cả phiên hỏng.
+READY_WAIT_S = 180
+
+
 class EvalRunner:
     """Chạy toàn bộ hoặc một phần bộ 75 ca."""
 
@@ -148,7 +157,7 @@ class EvalRunner:
         self.log(f"LLM  : {self.reasoner.provider.name} / {self.model_name} "
                  f"(cache TAT)")
 
-        ok, problems = ensure_clean_slate(self.k8s, log=self.log)
+        ok, problems = ensure_clean_slate(self.k8s, log=self.log, wait_ready_s=READY_WAIT_S)
         if not ok:
             self.log("")
             self.log("KHONG CHAY DUOC — he thong chua sach:")
@@ -230,7 +239,7 @@ class EvalRunner:
         self.log("=" * 70)
 
         # --- 1. sach chua ---
-        ok, problems = ensure_clean_slate(self.k8s, log=self.log)
+        ok, problems = ensure_clean_slate(self.k8s, log=self.log, wait_ready_s=READY_WAIT_S)
         if not ok:
             raise RunAborted("; ".join(problems))
 
@@ -562,7 +571,7 @@ class EvalRunner:
                 log["fault_revert"].append({"fault_id": fid, "error": str(e)[:300]})
                 self.log(f"  hoan tac {fid} NEM LOI: {e}")
 
-        ok, problems = ensure_clean_slate(self.k8s, log=self.log)
+        ok, problems = ensure_clean_slate(self.k8s, log=self.log, wait_ready_s=READY_WAIT_S)
         log["clean_after"] = ok
         log["problems_after"] = problems
         return log

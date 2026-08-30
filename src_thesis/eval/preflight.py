@@ -36,11 +36,51 @@ def _log(msg: str, log=None) -> None:
     (log or print)(msg)
 
 
-def ensure_clean_slate(k8s: K8sClient | None = None, log=None) -> tuple[bool, list[str]]:
+def ensure_clean_slate(
+    k8s: K8sClient | None = None,
+    log=None,
+    wait_ready_s: int = 0,
+    gap_s: int = 20,
+) -> tuple[bool, list[str]]:
     """Kiểm tra cấu hình sạch. Trả về (sạch, danh sách vấn đề).
 
     KHÔNG tự sửa gì. Một script tự dọn dẹp khi thấy trạng thái lạ là script sẽ
     xóa mất chính bằng chứng của lỗi mà ta cần đọc.
+
+    `wait_ready_s` — chờ tối đa chừng này giây cho pod ĐANG KHỞI ĐỘNG LẠI, và CHỈ
+    cho loại vấn đề đó. Chờ không phải là sửa: pod 20 giây tuổi chưa sẵn sàng thì
+    trạng thái đúng của nó là "chưa biết", không phải "hỏng".
+
+    VÌ SAO CẦN: ngày 2026-08-30 bộ chạy 15 ca dừng hai lần ở cùng một chỗ. Dọn dẹp
+    sau ca S1 gỡ biến EXTRA_LATENCY, Kubernetes tạo lại pod productcatalogservice,
+    và ca kế tiếp kiểm ngay lập tức rồi tuyên cả phiên hỏng. Ở chế độ `direct` agent
+    còn chồng thêm scale_up hai lần và restart_pod, nên pod càng lâu sẵn sàng. Mọi
+    ca S1 và S5 đều sẽ vấp chuyện này.
+
+    Các vấn đề KHÁC — còn lỗi chưa hoàn tác, twin còn sống — thì KHÔNG chờ: thời
+    gian không làm chúng tự hết, và chờ chỉ trì hoãn một lỗi thật.
+    """
+    deadline = time.time() + max(0, wait_ready_s)
+    while True:
+        blocking, not_ready = _check_once(k8s)
+        if not blocking and not not_ready:
+            return True, []
+        if blocking or time.time() >= deadline:
+            problems = list(blocking)
+            if not_ready:
+                problems.append(
+                    f"{len(not_ready)} pod chua san sang: {', '.join(not_ready[:5])}")
+            return False, problems
+        _log(f"  {len(not_ready)} pod dang khoi dong lai "
+             f"({', '.join(not_ready[:3])}), cho {gap_s}s...", log)
+        time.sleep(gap_s)
+
+
+def _check_once(k8s: K8sClient | None = None) -> tuple[list[str], list[str]]:
+    """Một lượt kiểm. Trả về (vấn đề KHÔNG chờ được, pod chưa sẵn sàng).
+
+    Tách hai loại ra vì chúng khác bản chất: một loại là trạng thái sai cần người
+    xử lý, loại kia là trạng thái tạm thời sẽ tự hết.
     """
     k8s = k8s or K8sClient(namespace="default")
     problems: list[str] = []
@@ -67,14 +107,9 @@ def ensure_clean_slate(k8s: K8sClient | None = None, log=None) -> tuple[bool, li
         prod = k8s.list_pods("default")
     except Exception as e:
         problems.append(f"khong doc duoc pod cua namespace default: {e}")
-        return False, problems
+        return problems, []
 
-    not_ready = [p.name for p in prod if not p.ready]
-    if not_ready:
-        problems.append(
-            f"{len(not_ready)} pod chua san sang: {', '.join(not_ready[:5])}")
-
-    return (not problems), problems
+    return problems, [p.name for p in prod if not p.ready]
 
 
 def wait_for_clean_baseline(
