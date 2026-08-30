@@ -408,6 +408,41 @@ test-s1-direct  direct         3/3 vong   180s  -> khong chan gi
 - **XAI chọn sai hành động cho S1** — `scale_up` không gỡ được độ trễ chèn mỗi lần gọi. Khớp số đo phase 3 (S1 hành động đúng chỉ 20–40%). Quy tắc sửa nằm trong gói prompt v5 đã bị loại vì làm tổng thể tệ đi; phase 6 phải tách ra thử riêng từng quy tắc.
 - Hành động vô ích **không trung tính**: sau `scale_up` ở ca S1, số cạnh chậm tăng từ 5 lên 15.
 
+### Chạy lại trên k3s (2026-08-30) — CỔNG CHẶN ĐẠT, trọn vòng trong một ca
+
+Chi tiết ở `docs/thesis-notes.md`. Chạy bằng Groq `openai/gpt-oss-120b`.
+
+**Ca S2 chứa trọn chuỗi lập luận của cả đề tài, trong một lượt chạy duy nhất:**
+
+```
+VONG 1  chan doan currencyservice/crash (0.96)  ->  restart_pod (SAI)  ->  TWIN CHAN
+VONG 2  chan doan currencyservice/crash (0.96)  ->  scale_up (DUNG)    ->  AP, 0 -> 1
+VONG 3  he thong sach  ->  dung
+```
+
+Lần gốc cần hai ca riêng mới kể hết. Lần này một ca: *chẩn đoán đúng → hành động sai → bị chặn → tự sửa → hồi phục*. Vòng 2 chứng minh vòng lặp ReAct hoạt động: agent nhận phản hồi từ twin rồi **đổi lựa chọn**, không phải thử ngẫu nhiên.
+
+**Twin chặn vì bất khả thi về mặt vật lý, không vì vượt ngưỡng.** `0/0 pod san sang` — `restart_pod` xóa pod để k8s tạo lại, mà `replicas = 0` thì không có pod để xóa. Twin thi hành rồi báo lại rằng nó không làm được gì. Bằng chứng loại này mạnh hơn hẳn ca S1 lần gốc (chặn vì *đo thấy xấu đi*), vì không có ngưỡng nào để tranh cãi.
+
+Model **tự viết ra** "currencyservice has NO PODS AT ALL" rồi ngay sau đó đề xuất khởi động lại pod không tồn tại — khớp phát hiện 9 phase 3: chẩn đoán và chọn hành động là hai năng lực tách rời.
+
+**Cặp đối chứng chạy tay hỏng lần thứ hai, cùng một kiểu:**
+
+```
+                  vong   thoi gian   token    twin chan
+twin_verified      3/3       747s    11009        1
+direct             2/3       332s     5319        0
+```
+
+Chênh 415 giây, nhưng **LLM chọn khác nhau ở hai lượt** (twin_verified chọn `restart_pod`, direct chọn `scale_up`), nên phần lớn chênh lệch đến từ việc chạy thêm một vòng chứ không từ chi phí twin. Lần gốc chuyện này xảy ra trên S1, lần này trên S2, cả hai lệch cùng chiều.
+
+Hai lần trùng nhau là phát hiện tự thân: **cặp chạy tay không chứng minh được trade-off, bất kể chạy bao nhiêu lần bằng tay.** Yêu cầu 5 lần mỗi kịch bản ở mục 8 là điều kiện cần để tách dao động LLM khỏi ảnh hưởng của chế độ — đây là lập luận trực tiếp cho thiết kế thí nghiệm phase 6.
+
+**Hai ghi chú vận hành:**
+
+- `inject.py --status` là **sổ ghi ý định, không phải phép đo**: sau khi agent sửa xong nó vẫn báo còn lỗi, trong khi `kubectl` và snapshot đều nói hệ thống sạch. Chạy tay phải tự dọn; phase 6 đã xử bằng thứ tự hoàn tác ngược chiều.
+- Groq trả `413` vì prompt agent ~6000 token cộng `max_tokens=4000` vượt trần 8000/phút; code tự hạ xuống 2000 rồi chạy tiếp. **Chi phí thật của tầng miễn phí là trần token mỗi phút, không phải chất lượng model.**
+
 ---
 
 ## Phase 6 — Thí nghiệm và viết (2 tuần)

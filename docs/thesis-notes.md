@@ -1685,6 +1685,107 @@ test-s1-direct  direct         3/3 vong   180s  12234+1275 token  -> CON LECH
 
 
 
+## PHASE 5 CHẠY LẠI TRÊN K3S (2026-08-30): TRỌN VÒNG TRONG MỘT CA
+
+Chạy lại trên k3s bằng Groq `openai/gpt-oss-120b`. Cổng chặn đạt, tiêu chí thành công của
+kế hoạch đạt, và ca S2 cho kết quả trọn vẹn hơn cả lần gốc.
+
+**Phát hiện 15 — một ca duy nhất chứa trọn chuỗi lập luận của cả đề tài.**
+
+```
+VONG 1  chan doan currencyservice/crash (0.96)  ->  chon restart_pod (SAI)  ->  TWIN CHAN
+VONG 2  chan doan currencyservice/crash (0.96)  ->  chon scale_up (DUNG)    ->  AP, 0 -> 1
+VONG 3  he thong sach  ->  dung, khong goi LLM
+```
+
+Lần gốc cần **hai ca riêng** mới kể hết: `test-s2` cho thấy agent tự sửa được, `test-s1` cho
+thấy twin chặn được. Lần này một ca chứa cả: *chẩn đoán đúng → hành động sai → bị chặn → tự
+sửa → hệ thống hồi phục*.
+
+Vòng 2 là chỗ quan trọng nhất: sau khi bị chặn, agent **quay lại suy luận kèm phản hồi từ
+twin và đổi lựa chọn**. Đó là chữ "Re" trong ReAct — dùng thất bại làm dữ kiện, không phải
+thử ngẫu nhiên tới khi trúng.
+
+**Phát hiện 16 — twin chặn vì BẤT KHẢ THI VỀ MẶT VẬT LÝ, không vì vượt ngưỡng.**
+
+```
+twin: NO_CHANGE — khong thi hanh duoc tren twin: da khoi dong lai, 0/0 pod san sang
+```
+
+`restart_pod` xóa một pod để Kubernetes tạo lại. Với `replicas = 0` thì không có pod nào để
+xóa, và ReplicaSet cũng không được phép tạo pod mới. Twin **thi hành hành động đó rồi báo lại
+rằng nó không làm được gì** — chứ không phải đo rồi so với ngưỡng.
+
+Đây là loại bằng chứng mạnh hơn hẳn ca S1 lần gốc, nơi twin chặn vì *đo thấy xấu đi*. Phán
+quyết theo ngưỡng thì tranh cãi được — cả phase 4 vừa mất một ngày vì đúng chuyện đó. Phán
+quyết "hành động này không chạy được" thì không.
+
+Đáng chú ý hơn: model **tự viết ra** *"currencyservice has NO PODS AT ALL"* trong phần lập
+luận, rồi ngay sau đó đề xuất khởi động lại một pod không tồn tại. Chẩn đoán và hành động là
+hai năng lực tách rời — khớp đúng phát hiện 9 ở phase 3.
+
+**Chất lượng lập luận đáng chép vào báo cáo.** Vòng 1:
+
+> *"checkoutservice itself reports 100% errors with **low p95 (6.62ms)**, suggesting its
+> errors are **downstream**."*
+
+Model phân biệt *"checkoutservice hỏng"* với *"checkoutservice đang truyền lỗi của thứ nó
+gọi"*, và bằng chứng nó dùng là **độ trễ thấp**: thất bại nhanh nghĩa là chuyển tiếp lỗi,
+không phải tự hỏng. Đó là suy luận về đường lan truyền, không phải nhận dạng mẫu.
+
+**Phát hiện 17 — cặp đối chứng chạy tay hỏng lần thứ hai, theo đúng cùng một kiểu.**
+
+```
+                  vong   thoi gian   token    hanh dong   twin chan
+twin_verified      3/3       747s    11009        1           1
+direct             2/3       332s     5319        1           0
+```
+
+Nhìn qua thì twin_verified chậm hơn 2.25 lần. Nhưng vòng 1 của hai lượt khác nhau:
+
+```
+twin_verified  vong 1 -> restart_pod (SAI)   -> bi chan -> vong 2 scale_up
+direct         vong 1 -> scale_up    (DUNG)  -> xong
+```
+
+**LLM chọn khác nhau ở hai lượt.** Nên phần lớn 415 giây chênh lệch đến từ việc twin_verified
+phải chạy thêm một vòng vì XAI chọn sai, chứ không từ chi phí của twin. Token gấp đôi cũng
+chỉ vì 2 lần gọi LLM thay vì 1.
+
+Đây đúng hạn chế phase 5 gốc đã ghi, và **giờ lặp lại lần thứ hai** — lần gốc trên S1, lần
+này trên S2, cả hai lần đều lệch cùng chiều (direct tình cờ chọn đúng).
+
+Hai lần trùng nhau là một phát hiện tự thân: **cặp chạy tay không dùng để chứng minh
+trade-off được, bất kể chạy bao nhiêu lần bằng tay.** Yêu cầu 5 lần mỗi kịch bản ở mục 8
+không phải thủ tục hình thức — nó là điều kiện cần để tách dao động của LLM ra khỏi ảnh hưởng
+của chế độ. Đây là lập luận trực tiếp cho thiết kế thí nghiệm của phase 6.
+
+**Phát hiện 18 — `inject.py --status` là sổ ghi ý định, không phải phép đo.**
+
+Sau khi agent sửa xong, `--status` vẫn báo *"DANG CO 1 LOI CHUA HOAN TAC"* trong khi
+`kubectl get deploy currencyservice` cho `1/1` và snapshot cho diff sạch. Lý do: `inject.py`
+chỉ biết những gì **chính nó** tiêm; agent gỡ hộ mà không ai báo lại.
+
+Đây là món nợ phase 5 gốc soi từ chiều ngược lại. Chạy tay thì phải tự dọn; phase 6 đã xử —
+runner hoàn tác hành động của agent trước, rồi mới hoàn tác lỗi đã tiêm. Bài học rộng hơn,
+cùng họ với bốn ca "im lặng" ở trên: **muốn biết hệ thống thế nào thì phải đo, đừng đọc sổ.**
+
+**Chi phí thật của tầng miễn phí: trần token mỗi phút, không phải chất lượng model.**
+
+```
+[413] request qua to, ha max_tokens xuong 2000
+```
+
+Prompt agent ~6000 token cộng `max_tokens=4000` vượt trần 8000/phút của Groq. Code tự hạ
+`max_tokens` xuống 2000 rồi chạy tiếp. Nghĩa là tầng miễn phí buộc phải **cắt ngắn câu trả
+lời của chính model 120 tỉ tham số đó** — một loại chi phí không có trong bảng giá. Token đo
+được ~5500 mỗi lần gọi, khớp phase 3.
+
+**Cổng chặn ĐẠT.** Log JSON dựng lại được trọn ca: `baseline_source` và `has_baseline` (đúng
+bài học lỗi số 1 phase 5 gốc), và mỗi vòng có `diff_summary`, `red`, `explanation`,
+`chosen_action`, `risk_class`, `twin_verdict`, `action_result`, `promoted`, `skipped_reason`.
+Hai trường `actions_applied` và `actions_rejected_by_twin` đếm thẳng ra chỉ số cho phase 6.
+
 ### Phase 6 — Thí nghiệm
 
 ## Bước 6.0 — Viết xong bộ chạy thí nghiệm (2026-08-24)
