@@ -1,7 +1,7 @@
 """Kiem tra prometheus_client.py doc duoc so lieu that.
 
 Chay: python scripts/smoke_telemetry.py
-Yeu cau: cluster dang chay, localhost:9090 mo duoc.
+Yeu cau: cluster dang chay, localhost:30090 mo duoc (NodePort cua Prometheus).
 """
 
 import sys

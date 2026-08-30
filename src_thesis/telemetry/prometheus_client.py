@@ -20,7 +20,18 @@ from dataclasses import asdict, dataclass
 
 import requests
 
-DEFAULT_URL = "http://localhost:9090"
+# Cong 30090 la NodePort cua Prometheus tren k3s, xem infra/prometheus-values.yaml.
+# KHONG phai 9090.
+#
+# VI SAO: Kubernetes mo NodePort tren NODE. Voi k3s, node chinh la may dang chay
+# script nay, nen goi thang localhost:30090 la toi noi. Voi kind thi node la mot
+# container Docker, NodePort 30090 nam BEN TRONG container do, va kind bac cau
+# hostPort 9090 -> containerPort 30090 qua `extraPortMappings`. Code cu viet 9090
+# vi chay tren kind, noi Docker da dich san.
+#
+# Du an da chuyen han sang k3s. Neu quay ve kind thi doi lai thanh 9090 va bat
+# extraPortMappings trong infra/kind-cluster.yaml.
+DEFAULT_URL = "http://localhost:30090"
 CALLS = "traces_span_metrics_calls_total"
 DURATION = "traces_span_metrics_duration_milliseconds_bucket"
 

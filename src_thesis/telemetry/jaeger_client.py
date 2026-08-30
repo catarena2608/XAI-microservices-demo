@@ -17,7 +17,10 @@ from dataclasses import asdict, dataclass
 import requests
 from requests.exceptions import ConnectionError as RequestsConnectionError
 
-DEFAULT_URL = "http://localhost:16686"
+# Cong 30686 la NodePort cua Service `jaeger-external`, xem infra/jaeger-all-in-one.yaml.
+# KHONG phai 16686. Ly do giong prometheus_client.py: k3s mo NodePort thang tren node,
+# con kind thi phai bac cau qua Docker. Quay ve kind thi doi lai thanh 16686.
+DEFAULT_URL = "http://localhost:30686"
 
 
 @dataclass
