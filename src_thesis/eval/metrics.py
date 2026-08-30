@@ -260,15 +260,37 @@ def classify_action_effect(
         pb, pa = b.get("p95_ms", 0.0), a.get("p95_ms", 0.0)
         ratio = ((pa - pb) / pb) if pb > 0 else 0.0
 
+        # THU TU BON NHANH NAY LA PHAN QUAN TRONG NHAT CUA HAM.
+        #
+        # CA HAI chieu cua ti le loi phai xet TRUOC do tre. Ban dau chi chieu xau
+        # duoc uu tien, con chieu tot bi xep sau nhanh p95 — va no khong bao gio
+        # duoc xet toi khi p95 cung doi.
+        #
+        # Ca lam lo ra loi nay, S2_direct_r1 ngay 2026-08-30:
+        #   frontend  loi 78% -> 0%   (de = -0.78)
+        #   frontend  p95 4.31ms -> 145ms  (ratio = +32.6)
+        # Luc currencyservice chet, frontend THAT BAI TUC THI nen p95 be ti. Sau khi
+        # scale_up sua xong, request hoan tat that nen p95 ve muc binh thuong. Ban cu
+        # roi vao nhanh p95 truoc, cham `scale_up` la HARMFUL — dung hanh dong ma
+        # ground truth ghi la DUNG, va vua sua xong he thong.
+        #
+        # Hau qua neu khong sua: che do khong lam gi (baseline) co harmful = 0, con
+        # moi che do sua duoc deu bi phat. Chi so 4 — thu KLTN.md goi la trai tim cua
+        # de tai — se ket luan nguoc hoan toan.
+        #
+        # Docstring cua ham nay von da phat bieu dung quy tac ("Loi xep tren do tre"),
+        # chi la code khong lam theo. `verifier.compare()` thi lam dung: ca hai nhanh
+        # loi deu dung truoc do tre. Sua nay dua hai cho ve cung mot cau truc, dung
+        # nhu dong 158 yeu cau.
         if de >= HARMFUL_ERROR_DELTA:
             degraded.append(svc)
             notes.append(f"{svc} loi tang {de * 100:.1f} diem")
-        elif ratio >= HARMFUL_P95_RATIO:
-            degraded.append(svc)
-            notes.append(f"{svc} p95 tang {ratio * 100:.0f}%")
         elif -de >= HARMFUL_ERROR_DELTA:
             improved.append(svc)
             notes.append(f"{svc} loi giam {-de * 100:.1f} diem")
+        elif ratio >= HARMFUL_P95_RATIO:
+            degraded.append(svc)
+            notes.append(f"{svc} p95 tang {ratio * 100:.0f}%")
         elif ratio <= -HARMFUL_P95_RATIO:
             improved.append(svc)
             notes.append(f"{svc} p95 giam {-ratio * 100:.0f}%")

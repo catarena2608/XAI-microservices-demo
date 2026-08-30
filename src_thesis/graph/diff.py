@@ -54,6 +54,26 @@ THROUGHPUT_COLLAPSE_RATIO = 0.5
 SLOW_ABSOLUTE_MS = 500.0         # chậm hơn nửa giây là bất thường với hệ này
 SLOW_RATIO = 3.0                 # hoặc chậm gấp 3 lần so với lúc khỏe mạnh
 
+# SÀN TUYỆT ĐỐI cho phép so theo tỉ lệ. Cạnh phải chậm thêm ÍT NHẤT chừng này mới
+# được tính, dù tỉ lệ có lớn đến đâu.
+#
+# VÌ SAO CẦN: `SLOW_RATIO` thuần tương đối làm cạnh càng nhanh càng nhạy với nhiễu,
+# vì mẫu số càng nhỏ. Ngày 2026-08-30, preflight của ca S2_direct trượt 5 trên 6 lượt
+# chỉ vì `checkoutservice -> currencyservice` đo được 10–14ms so với nền 2.71ms — tức
+# "chậm gấp 4.2 lần", nhưng chênh lệch thật là 8–11 mili giây. Cần lượt thứ 7 là cả
+# ca hỏng, giữa một loạt chạy 30 tiếng.
+#
+# CHỌN SỐ NÀY THẾ NÀO: đối chiếu với dữ liệu kiểm chứng phase 2, KHÔNG phải với loạt
+# phase 6 đang đo — chọn ngưỡng cho vừa số liệu mình sắp kết luận là tự lừa mình.
+#
+#   tin hieu THAT nho nhat trong 6 kich ban:  +82ms   (S5, recommendation->catalog)
+#   nhieu QUAN SAT DUOC lon nhat:             +11.4ms (preflight S2, va "canh lech
+#                                                      nhat 11.46 lan" luc so hai nen)
+#
+# 20ms nam giua, cach nhieu 2 lan va cach tin hieu that 4 lan. Moi cạnh cham cua ca 6
+# kich ban da kiem chung deu vuot xa nguong nay, nen sàn nay khong bo sot ca nao.
+SLOW_MIN_DELTA_MS = 20.0
+
 
 @dataclass
 class EdgeFinding:
@@ -106,6 +126,7 @@ def diff_graphs(
     min_errors: int = MIN_ERRORS,
     slow_absolute_ms: float = SLOW_ABSOLUTE_MS,
     slow_ratio: float = SLOW_RATIO,
+    slow_min_delta_ms: float = SLOW_MIN_DELTA_MS,
 ) -> GraphDiff:
     """So hai graph. `baseline` là graph lúc hệ thống khỏe mạnh, có thì tốt hơn.
 
@@ -164,7 +185,9 @@ def diff_graphs(
                 on_critical_path=on_path(s, t),
             ))
 
-        if base and base.avg_ms > 0 and stat.avg_ms > base.avg_ms * slow_ratio:
+        if (base and base.avg_ms > 0
+                and stat.avg_ms > base.avg_ms * slow_ratio
+                and stat.avg_ms - base.avg_ms >= slow_min_delta_ms):
             out.slow_edges.append(EdgeFinding(
                 s, t,
                 f"trung binh {stat.avg_ms}ms, luc khoe manh {base.avg_ms}ms "
