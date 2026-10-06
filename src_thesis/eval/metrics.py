@@ -380,6 +380,16 @@ class CaseOutcome:
     took_s: float = 0.0
     actions_rejected_by_twin: int = 0
 
+    # co che kiem soat do lech — chi khac 0 khi agent bat guards
+    actions_auto_undone: int = 0
+    blocked_by_precondition: int = 0
+    blocked_by_drift: int = 0
+    drift_checks: int = 0               # so lan da doi sanh trang thai truoc khi ap
+
+    # hai chi so twin cua de cuong
+    twin_better: int = 0                # twin phan better, tuc la dinh dua len production
+    twin_transfer_ok: int = 0           # trong so do, production do duoc cung better
+
     notes: list = None
 
     def __post_init__(self) -> None:
@@ -414,6 +424,20 @@ class ModeSummary:
     cost_per_case: float | None
     took_mean_s: float
 
+    auto_undone_total: int = 0
+    blocked_by_precondition_total: int = 0
+    blocked_by_drift_total: int = 0
+    drift_checks_total: int = 0
+    # Ti le that bai do do lech trang thai = so lan bi chan vi lech / so lan doi
+    # sanh. None khi chua doi sanh lan nao (che do khong bat guards).
+    drift_failure_rate: float | None = None
+    twin_better_total: int = 0
+    twin_transfer_ok_total: int = 0
+    # Ti le chuyen giao thanh cong twin -> production = so lan twin phan better VA
+    # production do duoc cung better / so lan twin phan better. Lan bi chan o
+    # buoc ap (lech trang thai, dieu kien tien quyet) tinh la chuyen giao THAT BAI.
+    twin_transfer_rate: float | None = None
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -439,6 +463,10 @@ def summarize_mode(outcomes: list, mode: str = "") -> ModeSummary:
           if o.propagation_jaccard is not None]
     mt = [o.mttr_s for o in outcomes if o.mttr_s is not None]
     costs = [o.cost_usd for o in outcomes if o.cost_usd is not None]
+    drift_checks = sum(o.drift_checks for o in outcomes)
+    drift_blocked = sum(o.blocked_by_drift for o in outcomes)
+    twin_better = sum(o.twin_better for o in outcomes)
+    twin_ok = sum(o.twin_transfer_ok for o in outcomes)
 
     return ModeSummary(
         mode=mode or outcomes[0].mode,
@@ -461,6 +489,15 @@ def summarize_mode(outcomes: list, mode: str = "") -> ModeSummary:
             sum(o.input_tokens + o.output_tokens for o in outcomes) / n, 1),
         cost_per_case=round(sum(costs) / n, 6) if costs else None,
         took_mean_s=round(mean([o.took_s for o in outcomes]), 1),
+        auto_undone_total=sum(o.actions_auto_undone for o in outcomes),
+        blocked_by_precondition_total=sum(o.blocked_by_precondition for o in outcomes),
+        blocked_by_drift_total=drift_blocked,
+        drift_checks_total=drift_checks,
+        drift_failure_rate=(round(drift_blocked / drift_checks, 4)
+                            if drift_checks else None),
+        twin_better_total=twin_better,
+        twin_transfer_ok_total=twin_ok,
+        twin_transfer_rate=round(twin_ok / twin_better, 4) if twin_better else None,
     )
 
 

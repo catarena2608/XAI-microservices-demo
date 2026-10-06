@@ -536,6 +536,19 @@ class EvalRunner:
             notes.append(f"{out.unknown_effect_actions} hanh dong khong du luu luong "
                          f"de ket luan — KHAC voi 'khong doi gi'")
 
+        # --- co che kiem soat do lech va hai chi so twin cua de cuong ---
+        out.actions_auto_undone = sum(1 for r in rounds if r.get("auto_undone"))
+        out.blocked_by_precondition = sum(1 for r in rounds
+                                          if r.get("blocked_by") == "precondition")
+        out.blocked_by_drift = sum(1 for r in rounds if r.get("blocked_by") == "drift")
+        out.drift_checks = sum(1 for r in rounds if r.get("drift_checked"))
+        twin_better = [r for r in rounds if r.get("twin_used")
+                       and (r.get("twin_verdict") or {}).get("verdict") == "better"]
+        out.twin_better = len(twin_better)
+        out.twin_transfer_ok = sum(
+            1 for r in twin_better
+            if (r.get("prod_verdict") or {}).get("verdict") == "better")
+
         out.notes = notes
         return out
 
