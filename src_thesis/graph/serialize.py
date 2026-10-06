@@ -86,8 +86,12 @@ def describe_red_metrics(red: dict, max_rows: int = 20) -> str:
 
 
 def describe_resources(resources: dict, top: int = 8) -> str:
+    # Loc pod ha tang giong POD HEALTH. Truoc day chi POD HEALTH loc, nen Grafana va
+    # Prometheus — ton RAM nhat cluster — luon dung dau bang nay, va LLM co co do loi
+    # cho chinh bo do dac. Du lieu goc trong snapshot van giu du moi pod.
     lines = ["POD RESOURCES (top consumers):"]
-    rows = sorted(resources.values(), key=lambda r: -r.memory_bytes)[:top]
+    rows = sorted((r for r in resources.values() if not r.pod.startswith(INFRA_PODS)),
+                  key=lambda r: -r.memory_bytes)[:top]
     for r in rows:
         lines.append(
             f"  {r.pod}: cpu {r.cpu_cores:.3f} cores, "
