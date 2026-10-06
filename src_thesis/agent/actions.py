@@ -5,10 +5,19 @@ Mỗi hành động có ba thứ:
   - hàm hoàn tác, dựng lại từ chính `ActionResult` đó
   - `risk_class` quyết định agent được tự làm hay phải thử trên twin trước
 
-PHÂN MỨC RỦI RO (mục 7.3 KLTN.md):
-  easy    scale_up, scale_down, adjust_resources   agent tự làm
-  medium  reroute_traffic, purge_queue             agent tự làm
-  hard    restart_pod, rollback                    PHẢI qua twin xác nhận
+PHÂN MỨC RỦI RO (mục 7.3 KLTN.md) — ba mức, ba hành vi khác nhau:
+  easy    scale_up, scale_down          agent tự làm
+  medium  adjust_resources,             agent tự làm, đo lại sau một cửa sổ,
+          reroute_traffic, purge_queue  tệ đi thì TỰ HOÀN TÁC
+  hard    restart_pod, rollback         PHẢI qua twin xác nhận, áp xong cũng đo lại
+                                        và tự hoàn tác như medium
+
+`adjust_resources` ở mức medium chứ không phải easy: `set_cpu_limit` sửa pod template
+nên Kubernetes tạo lại pod, gián đoạn ngang restart chứ không rẻ như đổi số bản sao.
+Bản trước xếp nó vào easy, còn medium chỉ có hai hành động không thi hành được trên
+Online Boutique — nên ba mức rủi ro thật ra chỉ có hai hành vi.
+
+Tự hoàn tác chỉ chạy khi agent bật cơ chế kiểm soát, xem `ReactAgent.guards`.
 
 CHỖ NGUY HIỂM NHẤT CỦA CẢ FILE NÀY LÀ HÀM HOÀN TÁC.
 
@@ -45,7 +54,7 @@ RISK_OF_ACTION: dict[str, str] = {
     "no_action": "easy",
     "scale_up": "easy",
     "scale_down": "easy",
-    "adjust_resources": "easy",
+    "adjust_resources": "medium",
     "reroute_traffic": "medium",
     "purge_queue": "medium",
     "restart_pod": "hard",
@@ -54,6 +63,10 @@ RISK_OF_ACTION: dict[str, str] = {
 
 # Hành động phải được twin xác nhận trước khi áp lên production (mục 7.3, 7.4).
 NEEDS_TWIN = {"restart_pod", "rollback"}
+
+# Mức rủi ro được tự hoàn tác khi đo production thấy tệ đi sau khi áp. `hard` có
+# mặt ở đây dù đã qua twin: twin không đúng mọi lần, nên đây là lưới an toàn thứ hai.
+AUTO_UNDO_RISKS = {"medium", "hard"}
 
 # Biến môi trường mà `rollback` gỡ bỏ. Đây là các biến do người vận hành hoặc thí
 # nghiệm đặt vào, không phải cấu hình gốc của Online Boutique — gỡ chúng đưa service
@@ -206,7 +219,7 @@ class ActionExecutor:
         raise ValueError(f"khong biet hanh dong '{action}'")
 
     # ------------------------------------------------------------------
-    # easy
+    # easy (_scale) va medium (_adjust_resources)
     # ------------------------------------------------------------------
 
     def _scale(self, target: str, params: dict, direction: int) -> ActionResult:
@@ -447,3 +460,8 @@ def risk_of(action: str) -> str:
 def needs_twin(action: str) -> bool:
     """Hành động này có bắt buộc phải qua twin xác nhận không (mục 7.3 KLTN.md)."""
     return action in NEEDS_TWIN or risk_of(action) == "hard"
+
+
+def undo_if_worse(action: str) -> bool:
+    """Hành động này có được tự hoàn tác khi production tệ đi sau khi áp không."""
+    return action != "no_action" and risk_of(action) in AUTO_UNDO_RISKS

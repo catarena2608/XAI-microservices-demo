@@ -114,8 +114,9 @@ one on the critical business path and mention the other in reasoning_chain.
 
 ## Action risk classes
 
-- easy — scale_up, scale_down, adjust_resources. Cheap and easily reversible.
-- medium — reroute_traffic, purge_queue.
+- easy — scale_up, scale_down. Cheap and easily reversible.
+- medium — adjust_resources, reroute_traffic, purge_queue. adjust_resources recreates \
+the pod.
 - hard — restart_pod, rollback. These must be validated on a digital twin first.
 - no_action — the correct choice when the system is already recovering on its own, \
 for example after Kubernetes replaced a deleted pod.

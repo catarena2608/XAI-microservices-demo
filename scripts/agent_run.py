@@ -79,6 +79,14 @@ def describe_round(r: dict) -> None:
     elif r.get("skipped_reason"):
         print(f"  ket qua      : BI CHAN — {r['skipped_reason'][:150]}")
 
+    pv = r.get("prod_verdict") or {}
+    if pv:
+        print(f"  production   : {pv.get('verdict', '?').upper()} sau 1 cua so — "
+              f"{pv.get('reason', '')[:120]}")
+    if r.get("auto_undo"):
+        mark = "OK" if r.get("auto_undone") else "THAT BAI"
+        print(f"  tu hoan tac  : {mark} — {r['auto_undo'].get('detail', '')[:120]}")
+
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Chay agent ReAct")
@@ -97,6 +105,8 @@ def main() -> int:
                     help="mac dinh openai: groq goi mien phi chi cho 8000 token moi "
                          "phut, ma prompt cua agent da khoang 6000 nen de dinh 413")
     ap.add_argument("--model", default=None)
+    ap.add_argument("--guards", default="auto", choices=["auto", "on", "off"],
+                    help="co che kiem soat (tu hoan tac). auto: chi bat o twin_verified")
     args = ap.parse_args()
 
     if args.settle < 300 and not args.dry_run:
@@ -113,13 +123,15 @@ def main() -> int:
             settle_seconds=args.settle,
             dry_run=args.dry_run,
             reasoner=reasoner,
+            guards={"auto": None, "on": True, "off": False}[args.guards],
         )
     except RuntimeError as e:
         print(f"KHONG CHAY DUOC: {e}")
         return 1
 
     print(f"Che do: {args.mode}   namespace: {args.namespace}   "
-          f"tran {args.max_rounds} vong")
+          f"tran {args.max_rounds} vong   "
+          f"co che kiem soat: {'BAT' if agent.guards else 'TAT'}")
     print(f"LLM: {reasoner.provider.name} / {reasoner.model}")
     if agent.baseline is not None:
         print(f"Anh nen: {agent.baseline_source}")

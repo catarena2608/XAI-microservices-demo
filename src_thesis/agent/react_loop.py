@@ -10,16 +10,24 @@
         hard         -> VerifyOnTwin: dựng twin, thử, đo
                         better -> Apply lên production
                         khác   -> quay lại Reason kèm kết quả twin làm phản hồi
+    Watch    -> chờ một cửa sổ, đo production, so với số đo ngay trước khi áp
+                tệ đi, mức medium hoặc hard -> AutoUndo: hoàn tác, chờ thêm một cửa sổ
     Observe lại -> khỏi thì dừng, chưa khỏi thì vòng tiếp, tối đa 3 vòng
 
 BA CHẾ ĐỘ, để phase 6 so sánh (mục 8 KLTN.md):
 
-    direct        bỏ qua twin, hành động nào cũng áp thẳng — đây là ĐỐI CHỨNG
-    twin_verified hành động `hard` phải qua twin — đây là đề tài này
+    direct        bỏ qua twin, hành động nào cũng áp thẳng, không tự hoàn tác
+                  — đây là ĐỐI CHỨNG
+    twin_verified hành động `hard` phải qua twin, medium và hard tệ đi thì tự hoàn
+                  tác — đây là đề tài này
     xai_only      chỉ chẩn đoán, không hành động — đo riêng chất lượng XAI
 
 Chế độ `direct` cố ý làm liều: nó tồn tại để đo xem twin ngăn được bao nhiêu hành
 động có hại. Không có nó thì con số "agent-có-twin an toàn hơn" không so với cái gì.
+
+Cả hai chế độ đều qua node Watch, tức là đều đo trước và sau mỗi hành động. Bắt
+buộc phải vậy: chỉ số harmful của phase 6 chấm bằng cặp số đo này, và hai chế độ
+phải được chấm bằng cùng một thước. Chúng chỉ khác nhau ở chỗ có tự hoàn tác hay không.
 
 VÌ SAO TRẦN 3 VÒNG: không có trần thì agent gặp lỗi nó không sửa được sẽ lặp vô hạn,
 mỗi vòng tốn một lượt gọi LLM và ít nhất 5 phút chờ. Hết trần thì dừng và xuất báo
@@ -38,7 +46,13 @@ from typing import Annotated, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from src_thesis.agent.actions import ActionExecutor, ActionResult, needs_twin, risk_of
+from src_thesis.agent.actions import (
+    ActionExecutor,
+    ActionResult,
+    needs_twin,
+    risk_of,
+    undo_if_worse,
+)
 from src_thesis.agent.twin_manager import TwinManager
 from src_thesis.agent.verifier import TwinVerifier, Verdict
 from src_thesis.graph.baseline import load_baseline_graph
@@ -120,6 +134,16 @@ class RoundLog:
     twin_used: bool = False
     action_result: dict | None = None
     promoted: bool = False
+    # Do production NGAY TRUOC va MOT CUA SO SAU hanh dong (node watch). Chi so
+    # harmful cua phase 6 phai cham bang cap so nay. So voi `red` cua vong sau thi
+    # sai khi hanh dong da bi tu hoan tac: vong sau do trang thai SAU hoan tac, nen
+    # mot hanh dong co hai se trong nhu vo hai.
+    prod_before: dict = field(default_factory=dict)
+    prod_after: dict = field(default_factory=dict)
+    prod_verdict: dict | None = None
+    prod_error: str = ""
+    auto_undo: dict | None = None       # ActionResult cua lan tu hoan tac, neu co
+    auto_undone: bool = False
     skipped_reason: str = ""
     started_at: float = field(default_factory=time.time)
     took_s: float = 0.0
@@ -142,6 +166,8 @@ class AgentState(TypedDict, total=False):
     explanation: dict | None
     action: dict | None
     verdict: dict | None
+    applied: bool           # hanh dong vua roi co doi production khong
+    prod_verdict: str       # production te di / tot len sau mot cua so
 
     feedback: str           # ket qua twin lan truoc, nhoi lai vao prompt
     healthy: bool
@@ -162,6 +188,7 @@ class ReactAgent:
         settle_seconds: int = 300,
         dry_run: bool = False,
         baseline: ServiceGraph | None = None,
+        guards: bool | None = None,
     ):
         self.mode = mode
         self.namespace = namespace
@@ -172,6 +199,16 @@ class ReactAgent:
         self.reasoner = reasoner or XaiReasoner()
         self.twin = twin or TwinManager()
         self.twin_verifier = TwinVerifier(prom=self.prom, namespace="twin")
+        # Cung lop do voi twin, chi bo tien to "twin-": do production bang dung
+        # thuoc da dung de phan quyet tren twin.
+        self.prod_verifier = TwinVerifier(prom=self.prom, k8s=self.k8s,
+                                          namespace=namespace, prefix="")
+
+        # CO CHE KIEM SOAT (tu hoan tac). Mac dinh chi bat o `twin_verified`.
+        # `direct` la doi chung "agent lam lieu": bat co che o do thi khong con tach
+        # duoc phan an toan nao den tu twin, phan nao den tu co che. Truyen True hoac
+        # False de chay them cau hinh khac.
+        self.guards = (mode == "twin_verified") if guards is None else guards
 
         # ANH NEN — BAT BUOC de phat hien duoc kich ban cham.
         #
@@ -316,7 +353,7 @@ class ReactAgent:
         return {"verdict": v.to_dict()}
 
     def _apply(self, state: AgentState) -> AgentState:
-        """Thi hành hành động lên production."""
+        """Đo production rồi thi hành hành động. Chờ và đo lại là việc của Watch."""
         action = ProposedAction(**state["action"])
         log = self._round_log
 
@@ -325,22 +362,91 @@ class ReactAgent:
                              namespace=self.namespace, applied=False, verified=True,
                              detail="dry_run: khong dung toi cluster")
         else:
+            if action.action != "no_action":
+                # Do NGAY truoc khi doi, khong dung `red` luc observe: o nhanh twin da
+                # troi qua khoang 13 phut ke tu luc observe.
+                log.prod_before = self._measure_prod()
             r = self.executor.apply(action)
         log.action_result = r.to_dict()
         log.promoted = r.ok
 
         if action.action == "no_action":
-            return {"stop_reason": "agent chon khong lam gi"}
-        if not r.ok:
+            return {"applied": False, "stop_reason": "agent chon khong lam gi"}
+        if not r.applied:
             # Hanh dong that bai cung la mot ket qua, phai ghi lai va nhoi vao vong
             # sau — day chinh la "wasted action count" o muc 8 KLTN.md.
-            return {"feedback": f"Action {action.action} on {action.target} failed: "
+            return {"applied": False,
+                    "feedback": f"Action {action.action} on {action.target} failed: "
                                 f"{r.detail}"}
-        # Cho he thong lang lai truoc khi do o vong sau.
-        if not self.dry_run:
+        # Da doi production thi phai qua Watch, ke ca khi kiem chung that bai (vi du
+        # het gio cho rollout): thay doi van nam tren he thong va phai duoc do.
+        note = "" if r.ok else f" Verification failed: {r.error}."
+        return {"applied": True,
+                "feedback": f"Action {action.action} on {action.target} was applied: "
+                            f"{r.detail}.{note}"}
+
+    def _measure_prod(self) -> dict:
+        """Đo RED của production. Lỗi đo thì trả về rỗng và ghi lý do vào nhật ký vòng.
+
+        Không đo được thì `compare()` ra `no_change`, tức là KHÔNG tự hoàn tác: không
+        có số thì không được kết luận hành động đã làm hại.
+        """
+        try:
+            return self.prod_verifier.measure()
+        except Exception as e:
+            self._round_log.prod_error = str(e)[:200]
+            return {}
+
+    def _watch(self, state: AgentState) -> AgentState:
+        """Chờ đủ một cửa sổ, đo production lần nữa, so với số đo trước khi áp.
+
+        Chạy ở mọi chế độ có hành động. Node này chỉ đo và ghi lại; tự hoàn tác hay
+        không là việc của nhánh ngay sau nó.
+        """
+        log = self._round_log
+        # Phai cho DAY mot cua so: cho ngan hon thi so "sau" con lan trang thai
+        # "truoc" — bai hoc dat nhat cua phase 2.
+        time.sleep(self.settle_seconds)
+        log.prod_after = self._measure_prod()
+        v = self.prod_verifier.compare(log.prod_before, log.prod_after)
+        log.prod_verdict = v.to_dict()
+        return {
+            "prod_verdict": v.verdict,
+            "feedback": (state.get("feedback", "")
+                         + f" Measured on production {self.settle_seconds}s later: "
+                           f"{v.verdict} — {v.reason}."),
+        }
+
+    def _auto_undo(self, state: AgentState) -> AgentState:
+        """Hoàn tác hành động vừa làm production tệ đi.
+
+        Hoàn tác xong thì chờ thêm một cửa sổ. Không chờ thì vòng sau chẩn đoán trên
+        một cửa sổ còn lẫn khoảng thời gian tệ đi, và LLM sẽ đọc hậu quả của chính
+        hành động vừa gỡ thành triệu chứng của lỗi gốc.
+        """
+        log = self._round_log
+        act = state.get("action") or {}
+        what = f"Action {act.get('action')} on {act.get('target')}"
+        why = (log.prod_verdict or {}).get("reason", "")
+        result = ActionResult(**{k: v for k, v in log.action_result.items()
+                                 if k != "ok"})
+
+        u = self.executor.undo(result)
+        log.auto_undo = u.to_dict()
+        log.auto_undone = u.ok
+        if u.applied:
             time.sleep(self.settle_seconds)
-        return {"feedback": f"Action {action.action} on {action.target} was applied: "
-                            f"{r.detail}"}
+
+        if u.ok:
+            fb = (f"{what} made production WORSE ({why}) and was automatically "
+                  f"undone. Do not propose this same action again.")
+        elif result.undo_kind == "none":
+            fb = (f"{what} made production WORSE ({why}). It cannot be undone "
+                  f"automatically.")
+        else:
+            fb = (f"{what} made production WORSE ({why}). Automatic undo FAILED: "
+                  f"{u.detail}.")
+        return {"feedback": fb}
 
     def _reject(self, state: AgentState) -> AgentState:
         """Twin không xác nhận, không áp lên production."""
@@ -396,6 +502,20 @@ class ReactAgent:
         v = state.get("verdict") or {}
         return "apply" if v.get("verdict") == "better" else "reject"
 
+    def _after_apply(self, state: AgentState) -> str:
+        return "watch" if state.get("applied") else "done"
+
+    def _after_watch(self, state: AgentState) -> str:
+        """Tệ đi thì tự hoàn tác — chỉ khi bật cơ chế, và chỉ với mức medium, hard.
+
+        Mức easy cố ý không tự hoàn tác: đó là chỗ khác nhau giữa easy và medium.
+        """
+        action = (state.get("action") or {}).get("action", "")
+        if (self.guards and state.get("prod_verdict") == "worse"
+                and undo_if_worse(action)):
+            return "undo"
+        return "done"
+
     # ------------------------------------------------------------------
 
     def _build_graph(self):
@@ -405,6 +525,8 @@ class ReactAgent:
         g.add_node("select", self._select)
         g.add_node("twin", self._verify_on_twin)
         g.add_node("apply", self._apply)
+        g.add_node("watch", self._watch)
+        g.add_node("auto_undo", self._auto_undo)
         g.add_node("reject", self._reject)
         g.add_node("finish_round", self._finish_round)
 
@@ -426,7 +548,15 @@ class ReactAgent:
             "apply": "apply",
             "reject": "reject",
         })
-        g.add_edge("apply", "finish_round")
+        g.add_conditional_edges("apply", self._after_apply, {
+            "watch": "watch",
+            "done": "finish_round",
+        })
+        g.add_conditional_edges("watch", self._after_watch, {
+            "undo": "auto_undo",
+            "done": "finish_round",
+        })
+        g.add_edge("auto_undo", "finish_round")
         g.add_edge("reject", "finish_round")
         g.add_edge("finish_round", END)
         return g.compile()
@@ -511,6 +641,9 @@ class ReactAgent:
             "actions_rejected_by_twin": sum(1 for r in state.get("rounds", [])
                                             if r.get("twin_used")
                                             and not r.get("promoted")),
+            "guards": self.guards,
+            "actions_auto_undone": sum(1 for r in state.get("rounds", [])
+                                       if r.get("auto_undone")),
             "rounds": state.get("rounds", []),
         }
         if save:

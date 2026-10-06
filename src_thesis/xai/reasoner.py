@@ -41,7 +41,9 @@ MAX_RETRIES = 3
 CACHE_DIR = Path(__file__).resolve().parents[2] / "data" / "llm_cache"
 
 # Đổi số này mỗi khi sửa prompt, để cache cũ không bị dùng nhầm cho prompt mới.
-PROMPT_VERSION = "v4"
+# Bỏ qua "v5": tên đó đã dùng cho gói prompt bị loại ở phase 3 (docs/thesis-notes.md),
+# dùng lại thì dễ lẫn cả trong ghi chép lẫn với file cache cũ mang tiền tố v5.
+PROMPT_VERSION = "v6"
 
 
 @dataclass(frozen=True)

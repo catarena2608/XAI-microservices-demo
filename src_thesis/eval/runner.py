@@ -407,6 +407,12 @@ class EvalRunner:
             if r.get("twin_used"):
                 v = r.get("twin_verdict") or {}
                 self.log(f"    twin: {str(v.get('verdict')).upper()}")
+            pv = r.get("prod_verdict") or {}
+            if pv:
+                self.log(f"    production sau 1 cua so: {str(pv.get('verdict')).upper()}")
+            if r.get("auto_undo"):
+                self.log(f"    TU HOAN TAC: {'OK' if r.get('auto_undone') else 'THAT BAI'}"
+                         f" — {r['auto_undo'].get('detail', '')[:100]}")
             if r.get("skipped_reason"):
                 self.log(f"    BI CHAN: {r['skipped_reason'][:100]}")
 
@@ -502,11 +508,21 @@ class EvalRunner:
                                 "verdict": "no_action",
                                 "reason": "agent co y khong lam gi"})
                 continue
-            before = r.get("red") or {}
-            after = (rounds[i + 1].get("red") if i + 1 < len(rounds) else final_red)
+            if r.get("prod_after"):
+                # Cap so do ngay truoc va mot cua so sau hanh dong, do node watch ghi.
+                # PHAI dung cap nay khi co: hanh dong da bi tu hoan tac thi `red` cua
+                # vong sau la trang thai SAU hoan tac, va hanh dong co hai se trong nhu
+                # vo hai.
+                before, after = r.get("prod_before") or {}, r["prod_after"]
+            else:
+                # File ca cu, truoc khi co node watch.
+                before = r.get("red") or {}
+                after = (rounds[i + 1].get("red") if i + 1 < len(rounds) else final_red)
+            # Xet `applied` chu khong xet `ok`: hanh dong da doi production ma kiem
+            # chung that bai van tac dong len he thong, va phai duoc cham.
             eff = M.classify_action_effect(
                 ar.get("action", ""), ar.get("target", ""),
-                before, after or {}, applied=bool(ar.get("ok")))
+                before, after or {}, applied=bool(ar.get("applied")))
             effects.append(eff.to_dict())
 
         out.action_effects = effects
@@ -543,6 +559,9 @@ class EvalRunner:
         applied: list[dict] = []
         for r in report.get("rounds") or []:
             ar = r.get("action_result")
+            # Agent da tu hoan tac ngay trong vong do, hoan tac lan nua la thua.
+            if r.get("auto_undone"):
+                continue
             # Xet `applied` chu khong xet `ok`: hanh dong da doi cluster nhung kiem
             # chung that bai (vi du het gio cho rollout) van de lai thay doi tren he
             # thong. Chi hoan tac cai `ok` thi thay doi do nam lai sang ca sau.
