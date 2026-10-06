@@ -319,13 +319,18 @@ class ActionExecutor:
         Dùng JSON Patch chứ không dùng merge patch — bài học phase 2: merge patch
         thay cả mảng `containers` nên làm mất trường `image` và API trả 422.
         `unset_env` trong `k8s_client` đã cài đúng cách này.
+
+        HOÀN TÁC ĐƯỢC: giá trị cũ của từng biến bị gỡ được lưu vào `undo_args`, nên
+        `undo()` đặt lại đúng như trước. Bản trước khai `undo_kind="none"` dù không
+        có lý do kỹ thuật nào — `unset_env` vốn đã trả về giá trị cũ. Giờ chỉ còn
+        `restart_pod` là không hoàn tác được.
         """
-        removed, kept = [], []
+        removed: dict[str, str] = {}
+        kept = []
         for key in ROLLBACK_ENV_KEYS:
             if self.k8s.get_env(target, key, namespace=self.namespace) is None:
                 continue
-            self.k8s.unset_env(target, key, namespace=self.namespace)
-            removed.append(key)
+            removed[key] = self.k8s.unset_env(target, key, namespace=self.namespace)
 
         if not removed:
             return ActionResult(
@@ -345,7 +350,7 @@ class ActionExecutor:
             action="rollback", target=target, namespace=self.namespace,
             applied=True, verified=verified,
             detail=f"da go bien: {', '.join(removed)}",
-            undo_kind="none",
+            undo_kind="env", undo_args={"env": removed},
             error="" if verified else f"van con sau khi go: {', '.join(kept)}",
         )
 
@@ -391,15 +396,19 @@ class ActionExecutor:
                             and abs(a_m - w_m) < 1e-6)
                 detail = f"tran CPU ve lai {actual} (yeu cau {args.get('limit')})"
             elif kind == "env":
-                key, value = args["key"], args.get("value")
-                if value is None:
-                    self.k8s.unset_env(target, key, namespace=self.namespace)
-                else:
-                    self.k8s.set_env(target, key, value, namespace=self.namespace)
+                # {"env": {TEN_BIEN: gia_tri_cu}}. Gia tri cu None nghia la truoc do
+                # bien chua ton tai, nen hoan tac la go no di chu khong phai dat rong.
+                env = args["env"]
+                for key, value in env.items():
+                    if value is None:
+                        self.k8s.unset_env(target, key, namespace=self.namespace)
+                    else:
+                        self.k8s.set_env(target, key, value, namespace=self.namespace)
                 self.k8s.wait_ready(target, timeout=180, namespace=self.namespace)
-                actual = self.k8s.get_env(target, key, namespace=self.namespace)
-                verified = actual == value
-                detail = f"bien {key} ve lai {actual!r} (yeu cau {value!r})"
+                actual = {key: self.k8s.get_env(target, key, namespace=self.namespace)
+                          for key in env}
+                verified = actual == env
+                detail = f"bien moi truong ve lai {actual} (yeu cau {env})"
             else:
                 raise ValueError(f"khong biet cach hoan tac '{kind}'")
         except Exception as e:

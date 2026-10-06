@@ -543,8 +543,15 @@ class EvalRunner:
         applied: list[dict] = []
         for r in report.get("rounds") or []:
             ar = r.get("action_result")
-            if ar and ar.get("ok") and ar.get("undo_kind", "none") != "none":
-                applied.append(ar)
+            if not ar or not ar.get("ok") or ar.get("undo_kind", "none") == "none":
+                continue
+            # Bo qua hoan tac `rollback`. Bien no go di (EXTRA_LATENCY) chi do buoc tiem
+            # loi dat vao, va loi do nam trong active_fault.json ma buoc go loi ngay
+            # ben duoi se xu ly. Hoan tac rollback tuc la TIEM LAI loi roi go ra lan
+            # nua: hai lan tao lai pod vo ich moi ca, ket qua cuoi y het.
+            if ar.get("undo_kind") == "env":
+                continue
+            applied.append(ar)
         for ar in reversed(applied):
             payload = {k: v for k, v in ar.items() if k != "ok"}
             try:
