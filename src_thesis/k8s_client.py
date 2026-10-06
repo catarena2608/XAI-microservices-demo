@@ -196,6 +196,7 @@ class K8sClient:
             env = {e.name: e.value for e in (c.env or [])}
             out[d.metadata.name] = {
                 "replicas": int(d.spec.replicas or 0),
+                "ready": int(d.status.ready_replicas or 0),
                 "image": c.image,
                 "cpu_limit": (res.limits or {}).get("cpu") if res else None,
                 "cpu_request": (res.requests or {}).get("cpu") if res else None,

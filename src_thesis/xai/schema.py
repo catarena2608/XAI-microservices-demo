@@ -3,7 +3,8 @@
 Theo mục 7.2 KLTN.md. Mọi output của LLM đều validate bằng Pydantic, sai schema thì
 retry, không tin mù (mục 5 KLTN.md).
 
-Ba chỗ khác so với mục 7.2, đều có lý do rút ra từ phase 2:
+Bốn chỗ khác so với mục 7.2. Ba chỗ đầu có lý do rút ra từ phase 2, chỗ thứ tư là
+cơ chế kiểm tra điều kiện tiên quyết mà đề cương cam kết:
 
 1. Thêm hành động `no_action`. Kịch bản S3 xóa pod và Kubernetes tự tạo lại, nên
    đáp án đúng là KHÔNG LÀM GÌ. Danh sách gốc ở mục 7.2 không có lựa chọn này, mà
@@ -21,6 +22,11 @@ Ba chỗ khác so với mục 7.2, đều có lý do rút ra từ phase 2:
    nên từ điển tự do không dùng được. Danh sách cặp thì mọi nhà cung cấp đều nhận.
    Giá trị số viết dưới dạng chuỗi: "1", "200m", "512Mi". Dùng `params_dict()` để
    lấy lại dạng từ điển khi cần.
+
+4. Mỗi hành động có `preconditions`: những điều về trạng thái HIỆN TẠI mà hành
+   động dựa vào. Phải là dữ liệu có kiểu, không phải văn xuôi — "service phải còn
+   chạy" thì máy không kiểm được, và cơ chế chỉ còn cái tên. Agent kiểm từng điều
+   kiện trên cluster thật trước khi hành động (src_thesis/agent/guards.py).
 """
 
 from __future__ import annotations
@@ -59,6 +65,25 @@ class ActionParam(BaseModel):
     value: str
 
 
+# Chi nhung loai ma LLM NHIN THAY trong snapshot: so pod, pod san sang, tran CPU.
+# Khong co loai nao ve bien moi truong, vi snapshot khong chua bien moi truong —
+# khai ra thi chi la doan.
+PreconditionKind = Literal[
+    "replicas_eq",       # so ban sao dung bang value
+    "replicas_gte",      # so ban sao it nhat bang value
+    "pods_ready_gte",    # so pod dang san sang it nhat bang value
+    "cpu_limit_eq",      # tran CPU dung bang value, vi du "200m" hoac "0.2"
+]
+
+
+class Precondition(BaseModel):
+    """Một điều kiện về trạng thái hiện tại mà hành động dựa vào."""
+
+    kind: PreconditionKind
+    target: str = Field(description="Ten deployment, vi du productcatalogservice")
+    value: str = Field(description="Gia tri mong doi, viet dang chuoi: '1', '200m'")
+
+
 class ProposedAction(BaseModel):
     """Một hành động sửa lỗi được đề xuất."""
 
@@ -67,6 +92,11 @@ class ProposedAction(BaseModel):
     params: list[ActionParam] = Field(
         default_factory=list,
         description="Tham so cua hanh dong, vi du key=replicas value=1",
+    )
+    preconditions: list[Precondition] = Field(
+        default_factory=list,
+        description=("Dieu kien ve trang thai HIEN TAI ma hanh dong dua vao. Sai mot "
+                     "dieu kien thi hanh dong khong duoc thi hanh"),
     )
 
     risk_class: RiskClass = Field(

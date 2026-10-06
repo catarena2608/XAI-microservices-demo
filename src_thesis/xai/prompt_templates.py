@@ -111,6 +111,12 @@ one on the critical business path and mention the other in reasoning_chain.
 - reasoning_chain: one short sentence per step, in the order you actually reasoned.
 - propagation_path lists affected services, NOT including the root cause itself.
 - Order proposed_actions with the most appropriate first.
+- For every proposed action, fill preconditions with the facts about the CURRENT \
+state that the action relies on, using only what the snapshot shows: replicas_eq or \
+replicas_gte (pods of the deployment; NO PODS AT ALL means 0), pods_ready_gte (ready \
+pods), cpu_limit_eq (the CPU limit, for example "200m"). They may be checked against \
+the live cluster before the action runs, and an action whose precondition is false is \
+not executed. Example: restart_pod on X relies on replicas_gte 1 on X.
 
 ## Action risk classes
 

@@ -5,13 +5,17 @@
     Observe  -> chụp snapshot hệ thống
     Reason   -> LLM chẩn đoán, xuất JSON đã validate
     Select   -> lấy hành động ưu tiên cao nhất
+    Precheck -> kiểm điều kiện tiên quyết trên production; sai thì không thử twin,
+                không thi hành, vòng sau suy luận lại kèm giá trị thật
     rẽ nhánh theo risk_class:
         easy, medium -> Apply thẳng lên production
         hard         -> VerifyOnTwin: dựng twin, thử, đo
                         better -> Apply lên production
                         khác   -> quay lại Reason kèm kết quả twin làm phản hồi
     Apply    -> đối sánh trạng thái: cấu hình production đã đổi so với lúc kiểm chứng
-                thì KHÔNG thi hành; khớp thì đo production rồi mới thi hành
+                thì KHÔNG thi hành; kiểm lại điều kiện tiên quyết; qua hết thì đo
+                production rồi mới thi hành
+    (Precheck, đối sánh trạng thái và AutoUndo chỉ chạy khi bật cơ chế kiểm soát.)
     Watch    -> chờ một cửa sổ, đo production, so với số đo ngay trước khi áp
                 tệ đi, mức medium hoặc hard -> AutoUndo: hoàn tác, chờ thêm một cửa sổ
     Observe lại -> khỏi thì dừng, chưa khỏi thì vòng tiếp, tối đa 3 vòng
@@ -55,7 +59,13 @@ from src_thesis.agent.actions import (
     risk_of,
     undo_if_worse,
 )
-from src_thesis.agent.guards import capture_state, diff_state
+from src_thesis.agent.guards import (
+    capture_state,
+    check_preconditions,
+    describe_failed,
+    diff_state,
+    required_preconditions,
+)
 from src_thesis.agent.twin_manager import TwinManager
 from src_thesis.agent.verifier import TwinVerifier, Verdict
 from src_thesis.graph.baseline import load_baseline_graph
@@ -152,6 +162,10 @@ class RoundLog:
     state_seen: dict = field(default_factory=dict)
     drift_checked: bool = False
     drift: list = field(default_factory=list)   # khac nhau -> KHONG thi hanh
+    # Dieu kien tien quyet: ket qua kiem cua lan gan nhat, ca dieu kien do code
+    # quy dinh (source="code") lan do LLM khai (source="llm").
+    preconditions: list = field(default_factory=list)
+    blocked_by: str = ""                        # "precondition" | "drift" | ""
     skipped_reason: str = ""
     started_at: float = field(default_factory=time.time)
     took_s: float = 0.0
@@ -174,6 +188,7 @@ class AgentState(TypedDict, total=False):
     explanation: dict | None
     action: dict | None
     verdict: dict | None
+    blocked: bool           # bi chan o precheck vi dieu kien tien quyet
     applied: bool           # hanh dong vua roi co doi production khong
     prod_verdict: str       # production te di / tot len sau mot cua so
 
@@ -316,6 +331,48 @@ class ReactAgent:
         self._round_log.risk_class = risk_of(top.get("action", ""))
         return {"action": top}
 
+    def _precheck(self, state: AgentState) -> AgentState:
+        """Kiểm điều kiện tiên quyết trên production TRƯỚC khi dựng twin hay thi hành.
+
+        Đặt trước twin là chủ ý: hành động bất khả thi bị chặn trong vài giây, thay
+        vì phải dựng twin, chạy, đo xong mới biết.
+        """
+        action = state["action"]
+        failed = self._check_preconditions(action)
+        if not failed:
+            return {"blocked": False}
+        return {"blocked": True,
+                "feedback": self._precondition_feedback(action, failed)}
+
+    def _check_preconditions(self, action: dict) -> list[str]:
+        """Kiểm điều kiện do code quy định và điều kiện LLM khai. Trả về các điều kiện sai.
+
+        Không đọc được cluster thì coi như không đạt: không kiểm được thì không được
+        coi là đã thỏa.
+        """
+        log = self._round_log
+        conds = ([{**c, "source": "code"} for c in
+                  required_preconditions(action.get("action", ""),
+                                         action.get("target", ""))]
+                 + [{**c, "source": "llm"} for c in action.get("preconditions") or []])
+        try:
+            log.preconditions = check_preconditions(self.k8s, conds, self.namespace)
+        except Exception as e:
+            log.preconditions = []
+            failed = [f"khong doc duoc cluster de kiem dieu kien: {str(e)[:150]}"]
+        else:
+            failed = describe_failed(log.preconditions)
+        if failed:
+            log.blocked_by = "precondition"
+            log.skipped_reason = "dieu kien tien quyet khong dat: " + "; ".join(failed)
+        return failed
+
+    @staticmethod
+    def _precondition_feedback(action: dict, failed: list[str]) -> str:
+        return (f"Action {action.get('action')} on {action.get('target')} was NOT "
+                f"executed: precondition failed ({'; '.join(failed)}). Read the "
+                f"snapshot again and propose an action whose preconditions hold.")
+
     def _verify_on_twin(self, state: AgentState) -> AgentState:
         """Dựng twin, nạp trạng thái production, thử hành động, đo, rồi xóa twin.
 
@@ -388,12 +445,20 @@ class ReactAgent:
                              else ["khong doc duoc cau hinh production de doi sanh"])
                 if log.drift:
                     shown = "; ".join(log.drift[:5])
+                    log.blocked_by = "drift"
                     log.skipped_reason = f"production da doi tu luc kiem chung: {shown}"
                     return {"applied": False,
                             "feedback": (f"Action {action.action} on {action.target} "
                                          f"was NOT applied: production configuration "
                                          f"changed since it was checked ({shown}). "
                                          f"Diagnose again from the new snapshot.")}
+                # Kiem lai dieu kien tien quyet: o nhanh twin da troi qua mot chu ky
+                # twin, so pod san sang co the da khac luc precheck.
+                failed = self._check_preconditions(state["action"])
+                if failed:
+                    return {"applied": False,
+                            "feedback": self._precondition_feedback(state["action"],
+                                                                    failed)}
             if action.action != "no_action":
                 # Do NGAY truoc khi doi, khong dung `red` luc observe: o nhanh twin da
                 # troi qua khoang 13 phut ke tu luc observe.
@@ -537,6 +602,16 @@ class ReactAgent:
         name = action.get("action", "")
         if name == "no_action":
             return "apply"
+        if self.guards:
+            return "precheck"
+        return self._twin_or_apply(name)
+
+    def _after_precheck(self, state: AgentState) -> str:
+        if state.get("blocked"):
+            return "blocked"
+        return self._twin_or_apply((state.get("action") or {}).get("action", ""))
+
+    def _twin_or_apply(self, name: str) -> str:
         if self.mode == "twin_verified" and needs_twin(name):
             return "twin"
         return "apply"
@@ -566,6 +641,7 @@ class ReactAgent:
         g.add_node("observe", self._observe)
         g.add_node("reason", self._reason)
         g.add_node("select", self._select)
+        g.add_node("precheck", self._precheck)
         g.add_node("twin", self._verify_on_twin)
         g.add_node("apply", self._apply)
         g.add_node("watch", self._watch)
@@ -581,11 +657,17 @@ class ReactAgent:
         })
         g.add_edge("reason", "select")
         g.add_conditional_edges("select", self._after_select, {
+            "precheck": "precheck",
             "twin": "twin",
             "apply": "apply",
             "reject": "reject",
             "failed": "finish_round",
             "observe_only": "finish_round",
+        })
+        g.add_conditional_edges("precheck", self._after_precheck, {
+            "twin": "twin",
+            "apply": "apply",
+            "blocked": "finish_round",
         })
         g.add_conditional_edges("twin", self._after_twin, {
             "apply": "apply",
@@ -687,8 +769,10 @@ class ReactAgent:
             "guards": self.guards,
             "actions_auto_undone": sum(1 for r in state.get("rounds", [])
                                        if r.get("auto_undone")),
+            "blocked_by_precondition": sum(1 for r in state.get("rounds", [])
+                                           if r.get("blocked_by") == "precondition"),
             "blocked_by_drift": sum(1 for r in state.get("rounds", [])
-                                    if r.get("drift")),
+                                    if r.get("blocked_by") == "drift"),
             "rounds": state.get("rounds", []),
         }
         if save:
