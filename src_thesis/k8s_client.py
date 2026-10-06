@@ -180,6 +180,29 @@ class K8sClient:
             return c.resources.requests.get("cpu")
         return None
 
+    def deployment_states(self, namespace: str | None = None,
+                          env_keys: tuple[str, ...] = ()) -> dict[str, dict]:
+        """Cấu hình của MỌI deployment trong namespace, đọc trong MỘT lần gọi API.
+
+        Lấy container đầu tiên, giống các hàm `get_*` ở trên. Dùng cho phép đối
+        sánh trạng thái trước khi thi hành: gọi `get_*` lần lượt cho 12 deployment
+        là hơn 50 lần gọi API, và trạng thái có thể đổi ngay giữa các lần gọi đó.
+        """
+        ns = namespace or self.namespace
+        out: dict[str, dict] = {}
+        for d in self.apps.list_namespaced_deployment(ns).items:
+            c = d.spec.template.spec.containers[0]
+            res = c.resources
+            env = {e.name: e.value for e in (c.env or [])}
+            out[d.metadata.name] = {
+                "replicas": int(d.spec.replicas or 0),
+                "image": c.image,
+                "cpu_limit": (res.limits or {}).get("cpu") if res else None,
+                "cpu_request": (res.requests or {}).get("cpu") if res else None,
+                "env": {k: env.get(k) for k in env_keys},
+            }
+        return out
+
     # ------------------------------------------------------------------
     # GHI — mọi hàm trả về giá trị cũ để hoàn tác
     # ------------------------------------------------------------------

@@ -10,6 +10,8 @@
         hard         -> VerifyOnTwin: dựng twin, thử, đo
                         better -> Apply lên production
                         khác   -> quay lại Reason kèm kết quả twin làm phản hồi
+    Apply    -> đối sánh trạng thái: cấu hình production đã đổi so với lúc kiểm chứng
+                thì KHÔNG thi hành; khớp thì đo production rồi mới thi hành
     Watch    -> chờ một cửa sổ, đo production, so với số đo ngay trước khi áp
                 tệ đi, mức medium hoặc hard -> AutoUndo: hoàn tác, chờ thêm một cửa sổ
     Observe lại -> khỏi thì dừng, chưa khỏi thì vòng tiếp, tối đa 3 vòng
@@ -53,6 +55,7 @@ from src_thesis.agent.actions import (
     risk_of,
     undo_if_worse,
 )
+from src_thesis.agent.guards import capture_state, diff_state
 from src_thesis.agent.twin_manager import TwinManager
 from src_thesis.agent.verifier import TwinVerifier, Verdict
 from src_thesis.graph.baseline import load_baseline_graph
@@ -144,6 +147,11 @@ class RoundLog:
     prod_error: str = ""
     auto_undo: dict | None = None       # ActionResult cua lan tu hoan tac, neu co
     auto_undone: bool = False
+    # Doi sanh trang thai (src_thesis/agent/guards.py). `state_seen` la cau hinh luc
+    # kiem chung: luc observe, hoac luc twin chep tu production neu di nhanh twin.
+    state_seen: dict = field(default_factory=dict)
+    drift_checked: bool = False
+    drift: list = field(default_factory=list)   # khac nhau -> KHONG thi hanh
     skipped_reason: str = ""
     started_at: float = field(default_factory=time.time)
     took_s: float = 0.0
@@ -258,6 +266,10 @@ class ReactAgent:
             f"{n_err} canh loi, {n_slow} canh cham, {n_miss} canh thieu")
         healthy = n_err == 0 and n_slow == 0 and n_miss == 0
         self._round_log.healthy = healthy
+        if self.guards:
+            # Cau hinh ma chan doan cua vong nay dua vao. Doi sanh lai ngay truoc
+            # khi thi hanh.
+            self._round_log.state_seen = self._capture_state()
 
         return {
             "round_no": rnd,
@@ -321,6 +333,10 @@ class ReactAgent:
 
         try:
             self.twin.create_twin()
+            if self.guards:
+                # Chup ngay truoc khi twin chep: phan quyet cua twin noi ve DUNG trang
+                # thai nay, nen day moi la moc de doi sanh luc ap len production.
+                log.state_seen = self._capture_state()
             self.twin.load_state(source_namespace=self.namespace)
 
             twin_exec = ActionExecutor(namespace="twin")
@@ -362,6 +378,22 @@ class ReactAgent:
                              namespace=self.namespace, applied=False, verified=True,
                              detail="dry_run: khong dung toi cluster")
         else:
+            if self.guards and action.action != "no_action":
+                # DOI SANH TRANG THAI: cau hinh production phai con dung nhu luc kiem
+                # chung. Khac thi khong thi hanh, vong sau quan sat lai tu dau.
+                now = self._capture_state()
+                log.drift_checked = True
+                log.drift = (diff_state(log.state_seen, now)
+                             if log.state_seen and now
+                             else ["khong doc duoc cau hinh production de doi sanh"])
+                if log.drift:
+                    shown = "; ".join(log.drift[:5])
+                    log.skipped_reason = f"production da doi tu luc kiem chung: {shown}"
+                    return {"applied": False,
+                            "feedback": (f"Action {action.action} on {action.target} "
+                                         f"was NOT applied: production configuration "
+                                         f"changed since it was checked ({shown}). "
+                                         f"Diagnose again from the new snapshot.")}
             if action.action != "no_action":
                 # Do NGAY truoc khi doi, khong dung `red` luc observe: o nhanh twin da
                 # troi qua khoang 13 phut ke tu luc observe.
@@ -384,6 +416,17 @@ class ReactAgent:
         return {"applied": True,
                 "feedback": f"Action {action.action} on {action.target} was applied: "
                             f"{r.detail}.{note}"}
+
+    def _capture_state(self) -> dict:
+        """Chụp cấu hình production để đối sánh. Lỗi đọc thì trả về rỗng.
+
+        Rỗng ở bất kỳ lần chụp nào đều làm `_apply` KHÔNG thi hành: không đọc được
+        trạng thái thì không được coi là trạng thái không đổi.
+        """
+        try:
+            return capture_state(self.k8s, self.namespace)
+        except Exception:
+            return {}
 
     def _measure_prod(self) -> dict:
         """Đo RED của production. Lỗi đo thì trả về rỗng và ghi lý do vào nhật ký vòng.
@@ -644,6 +687,8 @@ class ReactAgent:
             "guards": self.guards,
             "actions_auto_undone": sum(1 for r in state.get("rounds", [])
                                        if r.get("auto_undone")),
+            "blocked_by_drift": sum(1 for r in state.get("rounds", [])
+                                    if r.get("drift")),
             "rounds": state.get("rounds", []),
         }
         if save:
