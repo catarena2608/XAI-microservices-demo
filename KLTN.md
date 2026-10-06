@@ -326,9 +326,11 @@ class ProposedAction(BaseModel):
 ```
 
 ### 7.3 Action space (phân theo mức rủi ro)
-- **easy** — agent được tự làm: tăng/giảm replica, điều chỉnh CPU/RAM
-- **medium** — agent được tự làm: đổi hướng traffic, xóa queue
-- **hard** — **chỉ được làm sau khi twin xác nhận**: restart pod, rollback
+- **easy** — agent được tự làm: tăng/giảm replica
+- **medium** — agent được tự làm, đo lại sau một cửa sổ, tệ đi thì **tự hoàn tác**: điều chỉnh tài nguyên (tạo lại pod), đổi hướng traffic, xóa queue
+- **hard** — **chỉ được làm sau khi twin xác nhận**, áp xong cũng đo lại và tự hoàn tác như medium: restart pod, rollback
+
+Tự hoàn tác, kiểm điều kiện tiên quyết và đối sánh trạng thái chỉ bật ở chế độ `twin_verified`; `direct` là đối chứng làm liều.
 
 ### 7.4 Vòng ReAct (LangGraph)
 ```
@@ -338,10 +340,16 @@ Reason (LLM) → Explanation JSON
    ↓
 Chọn action ưu tiên cao nhất
    ↓
-┌─ risk = easy/medium ─→ áp thẳng production ─→ đo lại
+Kiểm điều kiện tiên quyết trên production ── sai → quay lại Reason (kèm giá trị thật)
+   ↓
+┌─ risk = easy/medium ─→ áp production
 └─ risk = hard ────────→ dựng twin ─→ thử trên twin ─→ đo
                               ├─ tốt hơn  → áp production
                               └─ không    → quay lại Reason (kèm kết quả twin làm feedback)
+   ↓
+Ngay trước khi áp: đối sánh trạng thái — production đã đổi so với lúc kiểm chứng thì không áp
+   ↓
+Đo lại sau một cửa sổ ── medium/hard tệ đi → tự hoàn tác
    ↓
 Trần 3 vòng lặp. Hết trần → dừng, xuất báo cáo "không tự sửa được" + explanation vì sao.
 ```

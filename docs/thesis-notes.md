@@ -1888,8 +1888,110 @@ Ai chắc chắn máy không khởi động lại giữa các buổi thì ghim n
 
 Đây vẫn là cùng một nguyên tắc của phase 4: so hai thứ thì mọi biến ngoài biến đang khảo sát phải khớp, và khớp một nửa nguy hiểm hơn không khớp gì vì nó tạo cảm giác đã kiểm soát.
 
+## Ba cơ chế kiểm soát độ lệch trạng thái (2026-10-07)
+
+Đề cương cam kết bốn cơ chế kiểm soát độ lệch trạng thái: đối sánh trạng thái trước thi hành, kiểm tra điều kiện tiên quyết, thi hành thăm dò phạm vi hẹp, tự động hoàn tác. Trước đợt này code chưa có cơ chế nào đầy đủ. Đợt này cài ba cơ chế. Cơ chế thứ tư không cài, lý do ở cuối mục.
+
+Môi trường: cluster k3s mới, một node trên EC2, 4 vCPU, khoảng 16 GB RAM. **Khác VM cũ 4 GB**, nên số liệu đo trên hai máy không được trộn chung. Mọi phép thử dưới đây chạy thật trên cluster này, gọi thẳng các node thật của agent, chỉ không gọi LLM: hành động được chọn sẵn như thể LLM vừa đề xuất.
+
+**Ba cơ chế chỉ bật ở `twin_verified`** (cờ `guards` của `ReactAgent`, `--guards` của `agent_run.py`). `direct` vẫn là đối chứng làm liều: bật cơ chế ở đó thì không tách được phần an toàn nào đến từ twin, phần nào đến từ cơ chế. Cả hai chế độ đều đo production trước và sau mỗi hành động, để chỉ số harmful chấm bằng cùng một thước.
+
+Luồng mới, graph từ 7 node 13 cạnh lên 10 node 21 cạnh:
+
+```
+observe -> reason -> select -> precheck --dieu kien sai--> het vong, vong sau suy luan lai
+                                   |
+                       easy/medium |       hard
+                                   +-------------> twin --khong better--> reject
+                                   v                  | better
+                                 apply <--------------+
+                (doi sanh trang thai, kiem lai dieu kien, do truoc, thi hanh)
+                                   |
+                                 watch   (cho 300s, do production, so voi luc truoc)
+                                   |  te di VA muc medium/hard
+                                 auto_undo   (hoan tac, cho them 300s)
+```
+
+### 1. Tự động hoàn tác — ba mức rủi ro giờ có ba hành vi
+
+| Mức | Hành động | Hành vi |
+|---|---|---|
+| easy | `scale_up`, `scale_down` | tự làm, đo lại để ghi nhận, không tự hoàn tác |
+| medium | `adjust_resources` (`reroute_traffic`, `purge_queue` vẫn bị chặn) | tự làm, đo lại sau một cửa sổ, tệ đi thì tự hoàn tác |
+| hard | `restart_pod`, `rollback` | qua twin, áp xong cũng đo lại và tự hoàn tác như medium |
+
+Trước đây `adjust_resources` nằm ở easy, còn medium chỉ có hai hành động không thi hành được trên Online Boutique, nên ba mức rủi ro thật ra chỉ có hai hành vi. `adjust_resources` lên medium vì `set_cpu_limit` sửa pod template, Kubernetes phải tạo lại pod — gián đoạn ngang restart, không rẻ như đổi số bản sao.
+
+`rollback` giờ hoàn tác được: giá trị cũ của biến bị gỡ được lưu lại. Chỉ còn `restart_pod` là không hoàn tác được, vì pod cũ đã chết hẳn.
+
+**Kiểm chứng thật:** hạ trần CPU của `productcatalogservice` từ 200m xuống 10m bằng `adjust_resources`.
+
+```
+WATCH : WORSE — xau di o frontend, tong thoi gian cho doi +3723 ms/s tren nen 215 ms/s
+        frontend  p95 73.8 -> 1436.6ms   loi 0.0% -> 1.5%
+UNDO  : ok=True — tran CPU ve lai 200m
+cuoi  : cpu 200m/100m, khop luc dau
+```
+
+`productcatalogservice` tự đo p95 vẫn 0,5ms trong khi người gọi chờ hơn 1,4 giây: đúng chữ ký "hàng đợi trước khi được cấp CPU" mà prompt đã dạy LLM nhận ra.
+
+**Lỗi chấm điểm bắt được trước khi xảy ra.** Runner cũ chấm harmful bằng RED của vòng này so với RED của vòng sau. Có tự hoàn tác thì vòng sau đo trạng thái SAU hoàn tác, nên hành động có hại trông như vô hại. Thử trên một ca dựng tay: cách cũ ra `neutral`, cách mới ra `harmful`. Giờ chấm bằng cặp số đo `prod_before` / `prod_after` của node watch; file ca cũ vẫn chấm theo cách cũ.
+
+### 2. Đối sánh trạng thái trước thi hành
+
+Chụp cấu hình của 12 deployment ứng dụng (số bản sao, trần CPU, `EXTRA_LATENCY`, image) lúc observe, hoặc ngay trước khi twin chép từ production nếu đi nhánh twin. Ngay trước khi thi hành thì chụp lại và so. Khác nhau thì không thi hành, vòng sau quan sát lại. Không đọc được trạng thái cũng tính là lệch. Không so số pod đang sẵn sàng, vì con số đó dao động tự nhiên mỗi khi pod khởi động.
+
+**Kiểm chứng thật:** observe, rồi đổi tay `shippingservice` từ 1 lên 2 bản sao, rồi apply.
+
+```
+apply -> applied=False  blocked_by='drift'  drift=['shippingservice.replicas: 1 -> 2']
+```
+
+**Nói thẳng về con số trong thí nghiệm chính:** không có gì khác đổi cấu hình production trong lúc thí nghiệm, nên số lần chặn vì lệch gần như chắc chắn bằng 0. Chỉ số "tỷ lệ thất bại do độ lệch trạng thái" sẽ ra 0 trên N lần đối sánh. Đó là kết quả đúng của môi trường này, không phải bằng chứng cơ chế hoạt động. Bằng chứng là phép thử riêng ở trên.
+
+### 3. Kiểm tra điều kiện tiên quyết có kiểu
+
+Schema thêm `preconditions` cho mỗi hành động, là dữ liệu có kiểu chứ không phải văn xuôi: `replicas_eq`, `replicas_gte`, `pods_ready_gte`, `cpu_limit_eq`. Chỉ những thứ LLM nhìn thấy trong snapshot; không có loại nào về biến môi trường, vì snapshot không chứa biến môi trường. Code quy định thêm điều kiện bắt buộc: `restart_pod` cần ít nhất 1 bản sao, `scale_down` cần ít nhất 2, `rollback` cần có biến để gỡ. Node `precheck` kiểm trên production **trước khi dựng twin**; apply kiểm lại một lần nữa. Giá trị viết sai dạng thì ghi "không kiểm được", không chặn.
+
+Điều kiện do LLM khai là chỗ lời giải thích bị đem đối chiếu với cluster thật: LLM nói "service này có 1 bản sao" mà thật ra là 0 thì nó đang lập luận trên một trạng thái sai.
+
+**Kiểm chứng thật — dựng lại phát hiện 16:** hạ `currencyservice` về 0 bản sao, rồi đưa `restart_pod` vào precheck kèm hai điều kiện "LLM khai".
+
+```
+precheck mat 0.2s -> blocked
+  [code] replicas_gte 1   currencyservice  that=0     ok=False
+  [llm ] replicas_eq  1   currencyservice  that=0     ok=False
+  [llm ] cpu_limit_eq 0.2 frontend         that=200m  ok=True
+```
+
+Lần trước, twin phải dựng, chạy, đo xong mới báo "0/0 pod". Giờ bị chặn trong 0,2 giây. **Cái giá:** những lần chặn kiểu này không còn đi qua twin, nên số lần twin chặn trong thí nghiệm có thể giảm. Viết vào báo cáo theo hướng hai lớp: lớp rẻ (điều kiện tiên quyết) chặn hành động bất khả thi, lớp đắt (twin) dành cho tác động chỉ đo mới biết.
+
+Prompt thêm một luật hướng dẫn khai `preconditions`. Câu chữ giữ đúng ở cả hai chế độ ("may be checked"), vì `direct` không kiểm.
+
+### 4. Thi hành thăm dò phạm vi hẹp — không cài
+
+1. **Không có phạm vi hẹp để thử.** Mỗi service chạy 1 bản sao, không áp được cho một phần pod rồi giữ phần còn lại.
+2. **Không có lớp chia lưu lượng.** Online Boutique không có service mesh — cùng lý do `reroute_traffic` bị chặn.
+3. **Không đo riêng được từng pod.** spanmetrics gom chỉ số theo tên service, không theo pod, nên dù dựng thêm pod thăm dò cũng không tách được số đo của nó.
+
+Đây là giới hạn của môi trường thí nghiệm, không phải bỏ quên.
+
+### Hai lỗi cũ phát hiện thêm trong đợt này
+
+- **`wait_ready` trả về sau 0,7 giây trong khi pod mới chưa chạy.** Nó chỉ đếm pod sẵn sàng, mà pod cũ vẫn được tính. Hành động báo `verified` khi chưa có pod nào chạy cấu hình mới. Sửa: chờ rollout xong hẳn, cùng điều kiện với `kubectl rollout status`. Thử thật cả bốn loại hành động kèm hoàn tác: hàm giờ mất 2,4–3,5 giây, và lúc trả về thì pod mới đã `1/1 Running`. Runner giờ hoàn tác mọi hành động đã đổi cluster (`applied`), không chỉ cái `ok`.
+- **POD RESOURCES trong prompt liệt kê pod hạ tầng.** Bộ lọc `INFRA_PODS` mới áp cho POD HEALTH, nên Grafana và Prometheus luôn đứng đầu bảng tài nguyên. Đã lọc. `PROMPT_VERSION` lên v7 (bỏ qua v5 vì tên đó đã dùng cho gói prompt bị loại ở phase 3).
+
+### Số liệu mới trong `index.json`
+
+Mỗi chế độ có thêm: số lần tự hoàn tác, số lần bị chặn vì điều kiện tiên quyết, vì lệch trạng thái, số lần đối sánh, và hai chỉ số twin của đề cương:
+
+- **Tỷ lệ chuyển giao twin → production** = số lần twin phán `better` và production đo được cũng `better`, chia cho số lần twin phán `better`. Lần bị chặn ở bước áp tính là chuyển giao thất bại.
+- **Tỷ lệ thất bại do độ lệch trạng thái** = số lần bị chặn vì lệch, chia cho số lần đối sánh.
+
 ## Còn nợ trước khi chạy đủ 75 ca
 
+- **Chụp ảnh nền mới và đo lại fidelity trên cluster EC2.** Ảnh nền và fidelity là đặc tính của môi trường; số của VM cũ không dùng được cho máy mới.
+- **Chạy thử trọn vòng một ca có gọi LLM** ở `twin_verified`, để thấy precheck, watch và auto_undo chạy cùng nhau với lựa chọn thật của LLM.
 - **XAI chọn sai hành động cho S1.** `scale_up` không gỡ được độ trễ chèn mỗi lần gọi. Quy tắc sửa nằm trong gói prompt v5 đã bị loại vì làm tổng thể tệ đi từ 90% xuống 66.7%; phải tách ra thử **từng quy tắc một**, không thử cả gói.
 - **Chạy thử vài ca trước** để đo thời gian thật một ca, rồi mới đặt lịch cho đủ 75 ca.
 - Hành động vô ích **không trung tính**: sau `scale_up` ở ca S1, số cạnh chậm tăng từ 5 lên 15. Chỉ số 5 đếm nó là `wasted`, nhưng phần thảo luận phải nói rõ là "vô ích" không đồng nghĩa "vô hại".
@@ -1900,5 +2002,9 @@ Ai chắc chắn máy không khởi động lại giữa các buổi thì ghim n
 - Ba service không phát span server: `cartservice`, `shippingservice`, `adservice`. `redis-cart` hoàn toàn không nhìn thấy. Cạnh tới `cartservice` và `shippingservice` suy ra từ span client của `frontend` và `checkoutservice`.
 - Online Boutique kiến trúc phẳng, lỗi ít lan nhiều tầng.
 - Twin và production không chạy song song, nên MTTR của chế độ twin-verified có cộng thêm thời gian dựng twin.
+- Ba trên bốn cơ chế kiểm soát độ lệch được cài. Thi hành thăm dò phạm vi hẹp không cài được: 1 bản sao mỗi service, không có lớp chia lưu lượng, và spanmetrics chỉ đo theo service.
+- `restart_pod` không hoàn tác được, nên tự hoàn tác chỉ ghi nhận chứ không gỡ được nó.
+- Mức easy cố ý không tự hoàn tác; một `scale_up` làm tệ đi chỉ được ghi lại.
+- Trong thí nghiệm không có gì khác đổi cấu hình production, nên chỉ số thất bại do lệch trạng thái gần như chắc chắn bằng 0. Cơ chế được chứng minh bằng phép thử riêng.
 
 ## Số liệu cuối
