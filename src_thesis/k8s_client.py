@@ -20,6 +20,22 @@ from kubernetes.client.rest import ApiException
 DEFAULT_NAMESPACE = "default"
 
 
+def _rollout_done(d: Any) -> bool:
+    """Rollout của deployment đã xong hẳn chưa. Cùng điều kiện với `kubectl rollout status`.
+
+    Xong nghĩa là đủ ba điều: Kubernetes đã thấy cấu hình mới, mọi pod đều chạy cấu
+    hình mới, và không còn pod cũ nào phục vụ.
+    """
+    s = d.status
+    if int(s.observed_generation or 0) < int(d.metadata.generation or 0):
+        return False
+    want = int(d.spec.replicas or 0)
+    updated = int(s.updated_replicas or 0)
+    return (updated >= want
+            and int(s.replicas or 0) <= updated
+            and int(s.available_replicas or 0) >= updated)
+
+
 @dataclass
 class PodInfo:
     """Tóm tắt một pod, đủ dùng cho snapshot và cho prompt của XAI."""
@@ -319,15 +335,22 @@ class K8sClient:
 
     def wait_replicas(self, deployment: str, expected: int, timeout: int = 120,
                       namespace: str | None = None) -> bool:
-        """Chờ số pod sẵn sàng đúng bằng `expected`. True nếu kịp, False nếu quá giờ.
+        """Chờ rollout xong hẳn VÀ số pod sẵn sàng đúng bằng `expected`.
 
-        Dùng cho cả F2 (scale về 0) lẫn lúc hoàn tác (chờ về lại 1).
+        True nếu kịp, False nếu quá giờ. Dùng cho cả F2 (scale về 0) lẫn lúc hoàn tác
+        (chờ về lại 1).
+
+        PHẢI chờ rollout xong, không chỉ đếm pod sẵn sàng. Bản cũ chỉ đếm, và đã đo
+        được trên k3s: đổi env xong hàm trả về sau 0.7 giây trong khi pod mới còn
+        chưa sẵn sàng. Lý do: Kubernetes giữ pod CŨ chạy tới khi pod mới sẵn sàng,
+        nên số pod sẵn sàng vẫn là 1 ngay từ đầu. Hậu quả: hành động báo `verified`
+        khi chưa có pod nào chạy cấu hình mới.
         """
         ns = namespace or self.namespace
         deadline = time.time() + timeout
         while time.time() < deadline:
             d = self.apps.read_namespaced_deployment(deployment, ns)
-            if int(d.status.ready_replicas or 0) == expected:
+            if _rollout_done(d) and int(d.status.ready_replicas or 0) == expected:
                 return True
             time.sleep(2)
         return False

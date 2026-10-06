@@ -25,7 +25,7 @@ công cụ báo thành công**. Cụ thể:
 Với agent thì lớp lỗi này nặng hơn hẳn, vì agent **tiếp tục ra quyết định** dựa trên
 niềm tin rằng nó đã sửa xong. Vì vậy mọi hàm ở đây:
 
-  1. Đọc lại trạng thái sau khi đổi và so với thứ mình vừa yêu cầu.
+  1. Chờ rollout xong hẳn, rồi đọc lại trạng thái và so với thứ mình vừa yêu cầu.
   2. Trả về `verified=False` kèm lý do nếu không khớp, thay vì im lặng thành công.
 
 `no_action` là hành động hạng nhất, không phải trường hợp đặc biệt. Kịch bản S3 có
@@ -239,17 +239,20 @@ class ActionExecutor:
             )
 
         self.k8s.scale_deployment(target, after, namespace=self.namespace)
-        self.k8s.wait_replicas(target, after, timeout=180, namespace=self.namespace)
+        done = self.k8s.wait_replicas(target, after, timeout=180,
+                                      namespace=self.namespace)
 
         # KIEM CHUNG: doc lai, khong tin vao viec lenh tra ve khong loi.
         actual = self.k8s.get_replicas(target, namespace=self.namespace)
-        verified = actual == after
+        verified = done and actual == after
         return ActionResult(
             action=name, target=target, namespace=self.namespace,
             applied=True, verified=verified,
             detail=f"so ban sao {before} -> {actual} (yeu cau {after})",
             undo_kind="scale", undo_args={"replicas": before},
-            error="" if verified else f"yeu cau {after} nhung doc lai duoc {actual}",
+            error="" if verified else (
+                f"yeu cau {after} nhung doc lai duoc {actual}" if actual != after
+                else f"het 180s van chua du {after} pod san sang"),
         )
 
     def _adjust_resources(self, target: str, params: dict) -> ActionResult:
@@ -272,20 +275,23 @@ class ActionExecutor:
             )
 
         self.k8s.set_cpu_limit(target, wanted, namespace=self.namespace)
-        self.k8s.wait_ready(target, timeout=180, namespace=self.namespace)
+        done = self.k8s.wait_ready(target, timeout=180, namespace=self.namespace)
 
         actual = self.k8s.get_cpu_limit(target, namespace=self.namespace)
         # So theo SO millicore, khong so chuoi: Kubernetes chuan hoa "0.4" thanh "400m".
         want_m, actual_m = cpu_to_millicores(wanted), cpu_to_millicores(actual)
-        verified = (want_m is not None and actual_m is not None
-                    and abs(want_m - actual_m) < 1e-6)
+        matched = (want_m is not None and actual_m is not None
+                   and abs(want_m - actual_m) < 1e-6)
+        verified = done and matched
         return ActionResult(
             action="adjust_resources", target=target, namespace=self.namespace,
             applied=True, verified=verified,
             detail=f"tran CPU {before_limit} -> {actual} (yeu cau {wanted})",
             undo_kind="cpu",
             undo_args={"limit": before_limit, "request": before_request},
-            error="" if verified else f"yeu cau {wanted} nhung doc lai duoc {actual}",
+            error="" if verified else (
+                f"yeu cau {wanted} nhung doc lai duoc {actual}" if not matched
+                else "het 180s van chua co pod moi san sang"),
         )
 
     # ------------------------------------------------------------------
@@ -299,18 +305,20 @@ class ActionExecutor:
         `none` cho đúng sự thật, thay vì giả vờ có đường lùi.
         """
         self.k8s.restart_deployment(target, namespace=self.namespace)
-        self.k8s.wait_ready(target, timeout=240, namespace=self.namespace)
+        done = self.k8s.wait_ready(target, timeout=240, namespace=self.namespace)
 
         pods = [p for p in self.k8s.list_pods(self.namespace)
                 if p.deployment == target]
         ready = [p for p in pods if p.ready]
-        verified = len(ready) > 0
+        verified = done and len(ready) > 0
         return ActionResult(
             action="restart_pod", target=target, namespace=self.namespace,
             applied=True, verified=verified,
             detail=f"da khoi dong lai, {len(ready)}/{len(pods)} pod san sang",
             undo_kind="none",
-            error="" if verified else "khong pod nao san sang sau khi khoi dong lai",
+            error="" if verified else (
+                "khong pod nao san sang sau khi khoi dong lai" if not ready
+                else "het 240s van chua co pod moi san sang"),
         )
 
     def _rollback(self, target: str) -> ActionResult:
@@ -339,19 +347,21 @@ class ActionExecutor:
                 detail="khong co bien moi truong nao de go, service da o trang thai goc",
             )
 
-        self.k8s.wait_ready(target, timeout=240, namespace=self.namespace)
+        done = self.k8s.wait_ready(target, timeout=240, namespace=self.namespace)
 
         # KIEM CHUNG: doc lai tung bien, phai bien mat that.
         for key in removed:
             if self.k8s.get_env(target, key, namespace=self.namespace) is not None:
                 kept.append(key)
-        verified = not kept
+        verified = done and not kept
         return ActionResult(
             action="rollback", target=target, namespace=self.namespace,
             applied=True, verified=verified,
             detail=f"da go bien: {', '.join(removed)}",
             undo_kind="env", undo_args={"env": removed},
-            error="" if verified else f"van con sau khi go: {', '.join(kept)}",
+            error="" if verified else (
+                f"van con sau khi go: {', '.join(kept)}" if kept
+                else "het 240s van chua co pod moi san sang"),
         )
 
     # ------------------------------------------------------------------
@@ -380,20 +390,20 @@ class ActionExecutor:
             if kind == "scale":
                 want = int(args["replicas"])
                 self.k8s.scale_deployment(target, want, namespace=self.namespace)
-                self.k8s.wait_replicas(target, want, timeout=180,
-                                       namespace=self.namespace)
+                done = self.k8s.wait_replicas(target, want, timeout=180,
+                                              namespace=self.namespace)
                 actual = self.k8s.get_replicas(target, namespace=self.namespace)
-                verified = actual == want
+                matched = actual == want
                 detail = f"so ban sao ve lai {actual} (yeu cau {want})"
             elif kind == "cpu":
                 self.k8s.restore_cpu(target, args.get("limit"), args.get("request"),
                                      namespace=self.namespace)
-                self.k8s.wait_ready(target, timeout=180, namespace=self.namespace)
+                done = self.k8s.wait_ready(target, timeout=180, namespace=self.namespace)
                 actual = self.k8s.get_cpu_limit(target, namespace=self.namespace)
                 a_m = cpu_to_millicores(actual)
                 w_m = cpu_to_millicores(args.get("limit"))
-                verified = (a_m is not None and w_m is not None
-                            and abs(a_m - w_m) < 1e-6)
+                matched = (a_m is not None and w_m is not None
+                           and abs(a_m - w_m) < 1e-6)
                 detail = f"tran CPU ve lai {actual} (yeu cau {args.get('limit')})"
             elif kind == "env":
                 # {"env": {TEN_BIEN: gia_tri_cu}}. Gia tri cu None nghia la truoc do
@@ -404,10 +414,10 @@ class ActionExecutor:
                         self.k8s.unset_env(target, key, namespace=self.namespace)
                     else:
                         self.k8s.set_env(target, key, value, namespace=self.namespace)
-                self.k8s.wait_ready(target, timeout=180, namespace=self.namespace)
+                done = self.k8s.wait_ready(target, timeout=180, namespace=self.namespace)
                 actual = {key: self.k8s.get_env(target, key, namespace=self.namespace)
                           for key in env}
-                verified = actual == env
+                matched = actual == env
                 detail = f"bien moi truong ve lai {actual} (yeu cau {env})"
             else:
                 raise ValueError(f"khong biet cach hoan tac '{kind}'")
@@ -418,11 +428,14 @@ class ActionExecutor:
                 detail=f"hoan tac that bai: {e}", error=str(e)[:300],
             )
 
+        verified = done and matched
         return ActionResult(
             action=f"undo_{result.action}", target=target,
             namespace=self.namespace, applied=True, verified=verified,
             detail=detail,
-            error="" if verified else "hoan tac xong nhung doc lai khong khop",
+            error="" if verified else (
+                "hoan tac xong nhung doc lai khong khop" if not matched
+                else "hoan tac xong nhung het 180s van chua co pod moi san sang"),
         )
 
 

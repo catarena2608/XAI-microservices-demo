@@ -543,7 +543,10 @@ class EvalRunner:
         applied: list[dict] = []
         for r in report.get("rounds") or []:
             ar = r.get("action_result")
-            if not ar or not ar.get("ok") or ar.get("undo_kind", "none") == "none":
+            # Xet `applied` chu khong xet `ok`: hanh dong da doi cluster nhung kiem
+            # chung that bai (vi du het gio cho rollout) van de lai thay doi tren he
+            # thong. Chi hoan tac cai `ok` thi thay doi do nam lai sang ca sau.
+            if not ar or not ar.get("applied") or ar.get("undo_kind", "none") == "none":
                 continue
             # Bo qua hoan tac `rollback`. Bien no go di (EXTRA_LATENCY) chi do buoc tiem
             # loi dat vao, va loi do nam trong active_fault.json ma buoc go loi ngay
