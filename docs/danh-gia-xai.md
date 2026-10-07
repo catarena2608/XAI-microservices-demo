@@ -965,9 +965,10 @@ số sau khi đã biết chỉ số nào đẹp hơn.
 - nhóm `repeat` gửi prompt dựng lại, các cạnh "hòa" bị đảo thứ tự, không phải nguyên văn;
 - chưa có chỉ số phụ `diagnosis`, chưa in chi phí thật.
 
-63 lần gọi, khoảng 298.000 token vào. Chi phí ước tính khoảng 0,15 USD; bản cũ không in
-chi phí thật. File kết quả nằm trên k3s:
-`data/xai_audit/20261007-164344_counterfactual.json`, chưa mang về WSL.
+63 lần gọi, 63 lần thành công. Token thật cộng từ file kết quả: 268.653 vào, 30.395 ra,
+tức **0,156 USD**. File kết quả `data/xai_audit/20261007-164344_counterfactual.json` mang
+từ k3s về qua ConfigMap. Đã kiểm: JSON đọc được, đủ 63 lần gọi, từng kết quả khớp với
+màn hình k3s, không có mẫu khóa API. Giữ nguyên tên file để đối chiếu với màn hình.
 
 **Kết quả từng ca** (root / loại lỗi; mỗi nhóm 3 lần gọi):
 
@@ -1021,6 +1022,32 @@ Nhóm `repeat`: **24/24 lần gọi ra đúng y chẩn đoán gốc**, cả root
   mạnh nhất còn lại, kể cả nhiễu (S2). Ở cả 8 ca, prompt sau khi sửa vẫn còn bất thường,
   nên chưa tách được đây là thói quen của LLM hay chỉ là phản ứng đúng với dữ liệu còn lại.
 
+**Đọc `evidence` của các lần gọi `drop_cited`** (có được sau khi mang file về). Dùng bộ
+nhận biết RED của mục 13.6 để đếm: lần gọi nào trích lại số RED mà lời giải thích gốc
+đã trích, và bản cũ không bỏ.
+
+**Kết quả: 24/24 lần gọi `drop_cited` đều trích lại ít nhất một số như vậy.** Tức là ở
+bản cũ, LLM chưa lần nào thực sự "mất" bằng chứng đã trích. Đây là xác nhận trực tiếp,
+trên dữ liệu thật, cho lỗi ở mục 13.6. Cụ thể:
+
+| Ca | LLM trích lại | Chẩn đoán mới |
+|---|---|---|
+| S1 | p95 của checkoutservice (30000 ms), và ở lần 2 cả p95 của productcatalogservice và frontend | checkoutservice / recommendationservice |
+| S2 | checkoutservice 100% lỗi, frontend 76,7% lỗi; kèm pod checkoutservice "RECREATED 457s" (nhiễu) | checkoutservice / pod_kill |
+| S4 | frontend p95 4751 / 4876 ms | giữ frontend |
+| S5 | frontend p95 968 / 1796 ms, và ở lần 1 cả checkoutservice p95 750 ms | frontend (1 lần ra none) |
+
+Ba chi tiết đáng ghi:
+- **S1 lần 2**, LLM viết: *"productcatalogservice p95 latency 9750.0ms but fast calls
+  from frontend and checkoutservice"*. Nó thấy số sót lại, thấy số đó mâu thuẫn với các
+  cạnh đã được đưa về nhanh, và chọn tin các cạnh. Nghĩa là ở ca này, chẩn đoán dựa vào
+  cạnh nhiều hơn vào p95 của service.
+- **S4 lần 1** giữ `resource_exhaustion`, dù chính `evidence` mới của nó ghi *"No service
+  near CPU limit"*. Loại lỗi được giữ chỉ nhờ frontend p95 cao trong khi các callee đều
+  nhanh: kiểu "xếp hàng chờ CPU" mà prompt dạy. Chính lời giải thích mới đã tự mâu thuẫn.
+- **S2**: chẩn đoán mới dựa vào hai thứ. Một là số lỗi RED đã trích mà bản cũ không bỏ.
+  Hai là nhiễu "vừa tạo lại" (vấn đề 2, mục 13.5).
+
 **Việc lần chạy bản mới sẽ trả lời:**
 - S4 lần 1: bỏ thêm frontend p95 thì chẩn đoán có đổi không?
 - S5: bỏ thêm frontend p95 thì LLM chuyển sang "none" hay sang chỗ khác?
@@ -1034,7 +1061,6 @@ So từng ca giữa bản cũ và bản mới sẽ cho thấy lỗi ở mục 13
 - Chạy E2 bản đã sửa trên WSL: `python scripts/xai_audit.py counterfactual
   data/eval/20261007-065802 --repeats 3`, 66 lần gọi, khoảng 0,17 USD, khoảng 10 phút. Cần
   bạn đồng ý.
-- (Tùy chọn) Mang file kết quả bản cũ từ k3s về bằng ConfigMap, để giữ đủ `evidence` của
-  từng lần gọi.
+- So từng ca giữa bản cũ (file trên) và bản mới.
 - Commit dữ liệu phiên `20261007-065802` cùng các chỗ sửa của mục 13.
 - Quyết định có sửa bộ chạy cho vấn đề 2 không, rồi mới thu thêm dữ liệu.

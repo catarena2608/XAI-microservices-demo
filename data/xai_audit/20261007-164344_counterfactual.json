@@ -1,0 +1,2020 @@
+{
+  "model": "gpt-4.1-mini",
+  "repeats": 3,
+  "summary": {
+    "cases": 8,
+    "calls": {
+      "repeat": 24,
+      "drop_cited": 24,
+      "drop_uncited": 15
+    },
+    "flip_root": {
+      "repeat": 0.0,
+      "drop_cited": 0.75,
+      "drop_uncited": 0.0
+    },
+    "necessity": 0.75,
+    "sufficiency_violation": 0.0,
+    "faithfulness_gap": 0.75,
+    "cases_without_cited_signal": 0,
+    "cases_without_uncited_signal": 3
+  },
+  "cases": [
+    {
+      "reference": {
+        "root": "productcatalogservice",
+        "fault": "latency",
+        "action": "adjust_resources"
+      },
+      "plan": {
+        "signals": [
+          "slow:checkoutservice->productcatalogservice",
+          "slow:frontend->checkoutservice",
+          "slow:frontend->productcatalogservice",
+          "slow:frontend->recommendationservice",
+          "slow:recommendationservice->productcatalogservice",
+          "recreated:currencyservice",
+          "recreated:productcatalogservice"
+        ],
+        "cited": [
+          "slow:checkoutservice->productcatalogservice",
+          "slow:frontend->productcatalogservice",
+          "slow:recommendationservice->productcatalogservice",
+          "recreated:productcatalogservice"
+        ],
+        "uncited": [
+          "recreated:currencyservice"
+        ],
+        "mentioned_only_in_reasoning": [
+          "slow:frontend->checkoutservice",
+          "slow:frontend->recommendationservice"
+        ]
+      },
+      "variants": [
+        {
+          "name": "repeat",
+          "signals": [],
+          "notes": [],
+          "calls": [
+            {
+              "root": "productcatalogservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 8.4,
+              "input_tokens": 4429,
+              "output_tokens": 679,
+              "evidence": [
+                "frontend -> productcatalogservice: avg 6000.04ms vs healthy 1.09ms (5504.6x slower)",
+                "checkoutservice -> productcatalogservice: avg 6001.39ms vs healthy 137.1ms (43.8x slower)",
+                "recommendationservice -> productcatalogservice: avg 6003.2ms vs healthy 41.26ms (145.5x slower)",
+                "productcatalogservice p95 latency 9750.0ms",
+                "frontend -> checkoutservice: avg 42034.15ms vs healthy 300.74ms (139.8x slower)",
+                "frontend error rate 6.2%, checkoutservice error rate 0.0%, productcatalogservice error rate 0.0%",
+                "CPU usage productcatalogservice 0.002 of 0.200 cores (1% of limit)",
+                "productcatalogservice pod ready and running, recreated 331s ago"
+              ]
+            },
+            {
+              "root": "productcatalogservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 7.82,
+              "input_tokens": 4429,
+              "output_tokens": 542,
+              "evidence": [
+                "checkoutservice -> productcatalogservice: avg 6001.39ms vs healthy 137.1ms (43.8x slower)",
+                "frontend -> productcatalogservice: avg 6000.04ms vs healthy 1.09ms (5504.6x slower)",
+                "recommendationservice -> productcatalogservice: avg 6003.2ms vs healthy 41.26ms (145.5x slower)",
+                "productcatalogservice p95 latency 9750.0ms",
+                "frontend p95 latency 30000.0ms",
+                "checkoutservice p95 latency 30000.0ms",
+                "frontend -> checkoutservice avg 42034.15ms vs healthy 300.74ms (139.8x slower)",
+                "CPU usage productcatalogservice 0.002 of 0.200 cores (1%)"
+              ]
+            },
+            {
+              "root": "productcatalogservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 5.35,
+              "input_tokens": 4429,
+              "output_tokens": 452,
+              "evidence": [
+                "frontend -> productcatalogservice: avg 6000.04ms vs healthy 1.09ms (5504.6x slower)",
+                "checkoutservice -> productcatalogservice: avg 6001.39ms vs healthy 137.1ms (43.8x slower)",
+                "recommendationservice -> productcatalogservice: avg 6003.2ms vs healthy 41.26ms (145.5x slower)",
+                "productcatalogservice p95 latency 9750.0ms",
+                "frontend p95 latency 30000.0ms",
+                "checkoutservice p95 latency 30000.0ms",
+                "recommendationservice p95 latency 9750.0ms",
+                "CPU usage productcatalogservice 0.002 cores of 0.200 (1% limit)"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 0.0,
+          "flip_fault": 0.0,
+          "flip_action": 0.0
+        },
+        {
+          "name": "drop_cited",
+          "signals": [
+            "slow:checkoutservice->productcatalogservice",
+            "slow:frontend->productcatalogservice",
+            "slow:recommendationservice->productcatalogservice",
+            "recreated:productcatalogservice"
+          ],
+          "notes": [
+            "checkoutservice -> productcatalogservice: trung binh ve 137.1ms (anh nen trong prompt)",
+            "frontend -> productcatalogservice: trung binh ve 1.09ms (anh nen trong prompt)",
+            "recommendationservice -> productcatalogservice: trung binh ve 41.26ms (anh nen trong prompt)",
+            "productcatalogservice: pod khong con 'vua tao lai'"
+          ],
+          "calls": [
+            {
+              "root": "checkoutservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "checkoutservice",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 7.7,
+              "input_tokens": 4233,
+              "output_tokens": 706,
+              "evidence": [
+                "frontend->checkoutservice: avg 42034.15ms, healthy 300.74ms (139.8x slower)",
+                "checkoutservice p95 latency 30000.0ms",
+                "checkoutservice->productcatalogservice avg 137.1ms, no errors",
+                "frontend->recommendationservice avg 6005.46ms, recommendationservice p95 9750.0ms",
+                "currencyservice p95 0.48ms, 0.0% errors, pod recreated 466s ago",
+                "total call volume 39% of healthy baseline"
+              ]
+            },
+            {
+              "root": "checkoutservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "checkoutservice",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 10.37,
+              "input_tokens": 4233,
+              "output_tokens": 744,
+              "evidence": [
+                "frontend->checkoutservice: 42034.15ms p95 vs healthy 300.74ms",
+                "checkoutservice p95 latency: 30000.0ms",
+                "frontend->recommendationservice: 6005.46ms p95 vs healthy 49.12ms",
+                "recommendationservice p95 latency: 9750.0ms",
+                "productcatalogservice p95 latency: 9750.0ms",
+                "checkoutservice->currencyservice calls missing but currencyservice p95 latency 0.48ms and 0.0% errors",
+                "checkoutservice CPU usage 0.001 of 0.200 cores (0%)"
+              ]
+            },
+            {
+              "root": "recommendationservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "recommendationservice",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 9.22,
+              "input_tokens": 4233,
+              "output_tokens": 773,
+              "evidence": [
+                "frontend -> checkoutservice: avg 42034.15ms vs healthy 300.74ms",
+                "frontend -> recommendationservice: avg 6005.46ms vs healthy 49.12ms",
+                "recommendationservice p95 latency 9750.0ms",
+                "recommendationservice -> productcatalogservice avg 41.26ms",
+                "checkoutservice p95 latency 30000.0ms",
+                "currencyservice p95 latency 0.48ms, pod recreated 466s ago and ready",
+                "CPU usage recommendationservice 0.005 of 0.200 cores (3%)"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 1.0,
+          "flip_fault": 0.0,
+          "flip_action": 0.0
+        },
+        {
+          "name": "drop_uncited",
+          "signals": [
+            "recreated:currencyservice"
+          ],
+          "notes": [
+            "currencyservice: pod khong con 'vua tao lai'"
+          ],
+          "calls": [
+            {
+              "root": "productcatalogservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 11.37,
+              "input_tokens": 4390,
+              "output_tokens": 818,
+              "evidence": [
+                "frontend -> productcatalogservice: avg 6000.04ms vs healthy 1.09ms (5504.6x slower)",
+                "checkoutservice -> productcatalogservice: avg 6001.39ms vs healthy 137.1ms (43.8x slower)",
+                "recommendationservice -> productcatalogservice: avg 6003.2ms vs healthy 41.26ms (145.5x slower)",
+                "productcatalogservice p95 latency 9750.0ms",
+                "frontend p95 latency 30000.0ms, checkoutservice p95 latency 30000.0ms, recommendationservice p95 latency 9750.0ms",
+                "CPU usage of productcatalogservice is 0.002 of 0.200 cores (1% of limit), no resource exhaustion",
+                "productcatalogservice pod was recreated 331s ago and is currently ready"
+              ]
+            },
+            {
+              "root": "productcatalogservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 11.99,
+              "input_tokens": 4390,
+              "output_tokens": 799,
+              "evidence": [
+                "frontend->productcatalogservice: avg 6000.04ms vs healthy 1.09ms (5504.6x slower)",
+                "checkoutservice->productcatalogservice: avg 6001.39ms vs healthy 137.1ms (43.8x slower)",
+                "recommendationservice->productcatalogservice: avg 6003.2ms vs healthy 41.26ms (145.5x slower)",
+                "productcatalogservice p95 latency 9750.0ms",
+                "frontend p95 latency 30000.0ms",
+                "checkoutservice p95 latency 30000.0ms",
+                "frontend error rate 6.2%, productcatalogservice error rate 0.0%",
+                "CPU usage low on productcatalogservice (0.002 of 0.200 cores, 1% limit)"
+              ]
+            },
+            {
+              "root": "productcatalogservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 6.77,
+              "input_tokens": 4390,
+              "output_tokens": 487,
+              "evidence": [
+                "frontend -> productcatalogservice: avg 6000.04ms vs healthy 1.09ms (5504.6x slower)",
+                "checkoutservice -> productcatalogservice: avg 6001.39ms vs healthy 137.1ms (43.8x slower)",
+                "recommendationservice -> productcatalogservice: avg 6003.2ms vs healthy 41.26ms (145.5x slower)",
+                "productcatalogservice p95 latency 9750.0ms",
+                "frontend p95 latency 30000.0ms with 6.2% errors",
+                "checkoutservice p95 latency 30000.0ms",
+                "CPU usage productcatalogservice 0.002 of 0.200 cores (1% limit)",
+                "productcatalogservice pod was RECREATED 331s ago"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 0.0,
+          "flip_fault": 0.0,
+          "flip_action": 0.0
+        }
+      ],
+      "necessity": 1.0,
+      "sufficiency_violation": 0.0,
+      "faithfulness_gap": 1.0,
+      "noise_floor": 0.0,
+      "id": "S1_xai_only_r1/r1",
+      "correct": {
+        "root_correct": true,
+        "fault_correct": true,
+        "action_correct": true,
+        "expected_root": "productcatalogservice"
+      }
+    },
+    {
+      "reference": {
+        "root": "productcatalogservice",
+        "fault": "latency",
+        "action": "adjust_resources"
+      },
+      "plan": {
+        "signals": [
+          "slow:checkoutservice->productcatalogservice",
+          "slow:frontend->checkoutservice",
+          "slow:frontend->productcatalogservice",
+          "slow:frontend->recommendationservice",
+          "slow:recommendationservice->productcatalogservice",
+          "recreated:currencyservice",
+          "recreated:productcatalogservice"
+        ],
+        "cited": [
+          "slow:checkoutservice->productcatalogservice",
+          "slow:frontend->checkoutservice",
+          "slow:frontend->productcatalogservice",
+          "slow:recommendationservice->productcatalogservice"
+        ],
+        "uncited": [
+          "recreated:currencyservice",
+          "recreated:productcatalogservice"
+        ],
+        "mentioned_only_in_reasoning": [
+          "slow:frontend->recommendationservice"
+        ]
+      },
+      "variants": [
+        {
+          "name": "repeat",
+          "signals": [],
+          "notes": [],
+          "calls": [
+            {
+              "root": "productcatalogservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 8.2,
+              "input_tokens": 4382,
+              "output_tokens": 432,
+              "evidence": [
+                "checkoutservice -> productcatalogservice: avg 6001.46ms vs healthy 137.1ms",
+                "frontend -> checkoutservice: avg 30029.47ms vs healthy 300.74ms",
+                "frontend -> productcatalogservice: avg 6000.99ms vs healthy 1.09ms",
+                "recommendationservice -> productcatalogservice: avg 6002.86ms vs healthy 41.26ms",
+                "productcatalogservice p95 latency 9750.0ms",
+                "frontend p95 latency 30000.0ms",
+                "checkoutservice p95 latency 30000.0ms",
+                "CPU usage productcatalogservice 0.002 of 0.200 cores (1% limit)"
+              ]
+            },
+            {
+              "root": "productcatalogservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 6.79,
+              "input_tokens": 4382,
+              "output_tokens": 505,
+              "evidence": [
+                "checkoutservice -> productcatalogservice: avg 6001.46ms vs healthy 137.1ms",
+                "frontend -> productcatalogservice: avg 6000.99ms vs healthy 1.09ms",
+                "recommendationservice -> productcatalogservice: avg 6002.86ms vs healthy 41.26ms",
+                "productcatalogservice p95 latency 9750.0ms",
+                "frontend p95 latency 30000.0ms",
+                "checkoutservice p95 latency 30000.0ms",
+                "CPU usage productcatalogservice 0.002 of 0.200 cores (1% limit)",
+                "frontend -> checkoutservice avg 30029.47ms",
+                "frontend -> recommendationservice avg 6003.33ms"
+              ]
+            },
+            {
+              "root": "productcatalogservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 6.17,
+              "input_tokens": 4382,
+              "output_tokens": 483,
+              "evidence": [
+                "checkoutservice -> productcatalogservice: avg 6001.46ms vs healthy 137.1ms",
+                "frontend -> checkoutservice: avg 30029.47ms vs healthy 300.74ms",
+                "frontend -> productcatalogservice: avg 6000.99ms vs healthy 1.09ms",
+                "recommendationservice -> productcatalogservice: avg 6002.86ms vs healthy 41.26ms",
+                "productcatalogservice p95 latency 9750.0ms",
+                "frontend p95 latency 30000.0ms",
+                "checkoutservice p95 latency 30000.0ms",
+                "recommendationservice p95 latency 9750.0ms",
+                "CPU usage productcatalogservice 0.002 of 0.200 cores (1% limit)"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 0.0,
+          "flip_fault": 0.0,
+          "flip_action": 0.0
+        },
+        {
+          "name": "drop_cited",
+          "signals": [
+            "slow:checkoutservice->productcatalogservice",
+            "slow:frontend->checkoutservice",
+            "slow:frontend->productcatalogservice",
+            "slow:recommendationservice->productcatalogservice"
+          ],
+          "notes": [
+            "checkoutservice -> productcatalogservice: trung binh ve 137.1ms (anh nen trong prompt)",
+            "frontend -> checkoutservice: trung binh ve 300.74ms (anh nen trong prompt)",
+            "frontend -> productcatalogservice: trung binh ve 1.09ms (anh nen trong prompt)",
+            "recommendationservice -> productcatalogservice: trung binh ve 41.26ms (anh nen trong prompt)"
+          ],
+          "calls": [
+            {
+              "root": "recommendationservice",
+              "fault": "latency",
+              "action": "restart_pod",
+              "target": "recommendationservice",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 5.74,
+              "input_tokens": 4163,
+              "output_tokens": 453,
+              "evidence": [
+                "frontend->recommendationservice: avg 6003.33ms vs healthy 49.12ms",
+                "recommendationservice->productcatalogservice: avg 41.26ms, no errors",
+                "recommendationservice p95 latency 9750.0ms",
+                "productcatalogservice p95 latency 9750.0ms but fast calls from frontend and checkoutservice",
+                "frontend p95 latency 30000.0ms, errors 5.7%",
+                "CPU usage recommendationservice 0.005 of 0.200 cores (3% limit)",
+                "CPU usage frontend 0.003 of 0.200 cores (1% limit)"
+              ]
+            },
+            {
+              "root": "recommendationservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "recommendationservice",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 5.16,
+              "input_tokens": 4163,
+              "output_tokens": 418,
+              "evidence": [
+                "frontend -> recommendationservice: avg 6003.33ms vs healthy 49.12ms",
+                "recommendationservice p95 latency 9750.0ms",
+                "frontend p95 latency 30000.0ms with 5.7% errors",
+                "productcatalogservice p95 latency 9750.0ms",
+                "recommendationservice CPU usage 0.005 of 0.200 cores (3% limit)",
+                "recommendationservice pod running and ready, no recent recreation"
+              ]
+            },
+            {
+              "root": "recommendationservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "recommendationservice",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 5.77,
+              "input_tokens": 4163,
+              "output_tokens": 472,
+              "evidence": [
+                "frontend->recommendationservice: avg 6003.33ms vs healthy 49.12ms",
+                "recommendationservice->productcatalogservice: avg 41.26ms, no errors",
+                "recommendationservice p95 9750ms, productcatalogservice p95 9750ms",
+                "frontend p95 30000ms, errors 5.7%",
+                "checkoutservice p95 30000ms, errors 0.0%",
+                "total call volume 39% of baseline"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 1.0,
+          "flip_fault": 0.0,
+          "flip_action": 0.3333
+        },
+        {
+          "name": "drop_uncited",
+          "signals": [
+            "recreated:currencyservice",
+            "recreated:productcatalogservice"
+          ],
+          "notes": [
+            "currencyservice: pod khong con 'vua tao lai'",
+            "productcatalogservice: pod khong con 'vua tao lai'"
+          ],
+          "calls": [
+            {
+              "root": "productcatalogservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 6.53,
+              "input_tokens": 4312,
+              "output_tokens": 453,
+              "evidence": [
+                "checkoutservice -> productcatalogservice: avg 6001.46ms vs healthy 137.1ms",
+                "frontend -> checkoutservice: avg 30029.47ms vs healthy 300.74ms",
+                "frontend -> productcatalogservice: avg 6000.99ms vs healthy 1.09ms",
+                "recommendationservice -> productcatalogservice: avg 6002.86ms vs healthy 41.26ms",
+                "productcatalogservice p95 latency 9750.0ms",
+                "frontend p95 latency 30000.0ms",
+                "checkoutservice p95 latency 30000.0ms",
+                "CPU usage productcatalogservice 0.002 of 0.200 cores (1% limit)"
+              ]
+            },
+            {
+              "root": "productcatalogservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 5.66,
+              "input_tokens": 4312,
+              "output_tokens": 436,
+              "evidence": [
+                "checkoutservice -> productcatalogservice: avg 6001.46ms vs healthy 137.1ms",
+                "frontend -> checkoutservice: avg 30029.47ms vs healthy 300.74ms",
+                "frontend -> productcatalogservice: avg 6000.99ms vs healthy 1.09ms",
+                "recommendationservice -> productcatalogservice: avg 6002.86ms vs healthy 41.26ms",
+                "productcatalogservice p95 latency 9750.0ms",
+                "frontend p95 latency 30000.0ms",
+                "checkoutservice p95 latency 30000.0ms",
+                "CPU usage productcatalogservice 0.002 of 0.200 cores (1% limit)"
+              ]
+            },
+            {
+              "root": "productcatalogservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 10.16,
+              "input_tokens": 4312,
+              "output_tokens": 783,
+              "evidence": [
+                "checkoutservice -> productcatalogservice: avg 6001.46ms vs healthy 137.1ms",
+                "frontend -> checkoutservice: avg 30029.47ms vs healthy 300.74ms",
+                "frontend -> productcatalogservice: avg 6000.99ms vs healthy 1.09ms",
+                "recommendationservice -> productcatalogservice: avg 6002.86ms vs healthy 41.26ms",
+                "productcatalogservice p95 latency 9750.0ms",
+                "frontend p95 latency 30000.0ms",
+                "checkoutservice p95 latency 30000.0ms",
+                "CPU usage productcatalogservice 0.002 of 0.200 cores (1% of limit)",
+                "All 11 pods ready with no restarts"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 0.0,
+          "flip_fault": 0.0,
+          "flip_action": 0.0
+        }
+      ],
+      "necessity": 1.0,
+      "sufficiency_violation": 0.0,
+      "faithfulness_gap": 1.0,
+      "noise_floor": 0.0,
+      "id": "S1_xai_only_r2/r1",
+      "correct": {
+        "root_correct": true,
+        "fault_correct": true,
+        "action_correct": true,
+        "expected_root": "productcatalogservice"
+      }
+    },
+    {
+      "reference": {
+        "root": "currencyservice",
+        "fault": "crash",
+        "action": "scale_up"
+      },
+      "plan": {
+        "signals": [
+          "error:checkoutservice->currencyservice",
+          "error:frontend->checkoutservice",
+          "error:frontend->currencyservice",
+          "gone:currencyservice",
+          "recreated:checkoutservice"
+        ],
+        "cited": [
+          "error:checkoutservice->currencyservice",
+          "error:frontend->checkoutservice",
+          "error:frontend->currencyservice",
+          "gone:currencyservice"
+        ],
+        "uncited": [
+          "recreated:checkoutservice"
+        ],
+        "mentioned_only_in_reasoning": []
+      },
+      "variants": [
+        {
+          "name": "repeat",
+          "signals": [],
+          "notes": [],
+          "calls": [
+            {
+              "root": "currencyservice",
+              "fault": "crash",
+              "action": "scale_up",
+              "target": "currencyservice",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 4.35,
+              "input_tokens": 4406,
+              "output_tokens": 361,
+              "evidence": [
+                "checkoutservice -> currencyservice: 100.0% errors (11/11 calls)",
+                "frontend -> currencyservice: 100.0% errors (50/50 calls)",
+                "frontend -> checkoutservice: 100.0% errors (11/11 calls)",
+                "currencyservice: NO PODS AT ALL",
+                "checkoutservice: 100.0% errors, p95 4.2ms",
+                "frontend: 76.7% errors, p95 3.0ms",
+                "total call volume is only 14% of healthy baseline"
+              ]
+            },
+            {
+              "root": "currencyservice",
+              "fault": "crash",
+              "action": "scale_up",
+              "target": "currencyservice",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 3.86,
+              "input_tokens": 4406,
+              "output_tokens": 322,
+              "evidence": [
+                "checkoutservice -> currencyservice: 100.0% errors (11/11 calls)",
+                "frontend -> currencyservice: 100.0% errors (50/50 calls)",
+                "frontend -> checkoutservice: 100.0% errors (11/11 calls)",
+                "currencyservice: NO PODS AT ALL",
+                "checkoutservice: 100.0% errors, p95 4.2ms",
+                "frontend: 76.7% errors, p95 3.0ms",
+                "No service is close to CPU limit"
+              ]
+            },
+            {
+              "root": "currencyservice",
+              "fault": "crash",
+              "action": "scale_up",
+              "target": "currencyservice",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 4.89,
+              "input_tokens": 4406,
+              "output_tokens": 362,
+              "evidence": [
+                "checkoutservice -> currencyservice: 100.0% errors (11/11 calls)",
+                "frontend -> currencyservice: 100.0% errors (50/50 calls)",
+                "frontend -> checkoutservice: 100.0% errors (11/11 calls)",
+                "currencyservice: NO PODS AT ALL",
+                "checkoutservice: 100.0% errors, p95 4.2ms",
+                "frontend: 76.7% errors, p95 3.0ms",
+                "total call volume is only 14% of healthy baseline"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 0.0,
+          "flip_fault": 0.0,
+          "flip_action": 0.0
+        },
+        {
+          "name": "drop_cited",
+          "signals": [
+            "error:checkoutservice->currencyservice",
+            "error:frontend->checkoutservice",
+            "error:frontend->currencyservice",
+            "gone:currencyservice"
+          ],
+          "notes": [
+            "checkoutservice -> currencyservice: loi ve 0%",
+            "frontend -> checkoutservice: loi ve 0%",
+            "frontend -> currencyservice: loi ve 0%",
+            "currencyservice: them mot pod dang chay"
+          ],
+          "calls": [
+            {
+              "root": "checkoutservice",
+              "fault": "pod_kill",
+              "action": "no_action",
+              "target": "checkoutservice",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 5.85,
+              "input_tokens": 4277,
+              "output_tokens": 421,
+              "evidence": [
+                "checkoutservice: 0.11 req/s, 100.0% errors, p95 4.2ms",
+                "checkoutservice -> cartservice: 11 calls, 0.0% errors, avg 1.08ms",
+                "checkoutservice -> currencyservice: 11 calls, 0.0% errors, avg 0.03ms",
+                "checkoutservice -> productcatalogservice: 11 calls, 0.0% errors, avg 0.69ms",
+                "frontend -> checkoutservice: 11 calls, 0.0% errors, avg 2.66ms, but frontend own errors 76.7%",
+                "checkoutservice pod was RECREATED 457s ago"
+              ]
+            },
+            {
+              "root": "checkoutservice",
+              "fault": "pod_kill",
+              "action": "no_action",
+              "target": "checkoutservice",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 7.62,
+              "input_tokens": 4277,
+              "output_tokens": 478,
+              "evidence": [
+                "checkoutservice: 0.11 req/s, 100.0% errors, p95 4.2ms",
+                "checkoutservice -> cartservice: 11 calls, 0.0% errors, avg 1.08ms",
+                "checkoutservice -> currencyservice: 11 calls, 0.0% errors, avg 0.03ms",
+                "checkoutservice -> productcatalogservice: 11 calls, 0.0% errors, avg 0.69ms",
+                "frontend -> checkoutservice: 11 calls, 0.0% errors, avg 2.66ms",
+                "checkoutservice-777dff667-ctpv9 pod was RECREATED 457s ago, currently ready"
+              ]
+            },
+            {
+              "root": "checkoutservice",
+              "fault": "pod_kill",
+              "action": "no_action",
+              "target": "checkoutservice",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 6.38,
+              "input_tokens": 4277,
+              "output_tokens": 481,
+              "evidence": [
+                "checkoutservice: 0.11 req/s, 100.0% errors, p95 4.2ms",
+                "checkoutservice -> cartservice: 11 calls, 0.0% errors, avg 1.08ms",
+                "checkoutservice -> currencyservice: 11 calls, 0.0% errors, avg 0.03ms",
+                "checkoutservice -> productcatalogservice: 11 calls, 0.0% errors, avg 0.69ms",
+                "frontend: 2.80 req/s, 76.7% errors, p95 3.0ms",
+                "frontend -> checkoutservice: 11 calls, 0.0% errors, avg 2.66ms",
+                "checkoutservice pod was RECREATED 457s ago, currently ready",
+                "total call volume is only 14% of healthy baseline"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 1.0,
+          "flip_fault": 1.0,
+          "flip_action": 1.0
+        },
+        {
+          "name": "drop_uncited",
+          "signals": [
+            "recreated:checkoutservice"
+          ],
+          "notes": [
+            "checkoutservice: pod khong con 'vua tao lai'"
+          ],
+          "calls": [
+            {
+              "root": "currencyservice",
+              "fault": "crash",
+              "action": "scale_up",
+              "target": "currencyservice",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 6.67,
+              "input_tokens": 4380,
+              "output_tokens": 424,
+              "evidence": [
+                "checkoutservice -> currencyservice: 100.0% errors (11/11 calls)",
+                "frontend -> currencyservice: 100.0% errors (50/50 calls)",
+                "frontend -> checkoutservice: 100.0% errors (11/11 calls)",
+                "currencyservice: NO PODS AT ALL",
+                "checkoutservice: 100.0% errors, p95 4.2ms",
+                "frontend: 76.7% errors, p95 3.0ms",
+                "productcatalogservice: 0.0% errors, p95 0.48ms",
+                "cartservice: 0.0% errors, p95 2.35ms",
+                "total call volume is only 14% of healthy baseline"
+              ]
+            },
+            {
+              "root": "currencyservice",
+              "fault": "crash",
+              "action": "scale_up",
+              "target": "currencyservice",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 4.81,
+              "input_tokens": 4380,
+              "output_tokens": 388,
+              "evidence": [
+                "checkoutservice -> currencyservice: 100.0% errors (11/11 calls)",
+                "frontend -> currencyservice: 100.0% errors (50/50 calls)",
+                "frontend -> checkoutservice: 100.0% errors (11/11 calls)",
+                "currencyservice: NO PODS AT ALL",
+                "checkoutservice: 100.0% errors, p95 4.2ms",
+                "frontend: 76.7% errors, p95 3.0ms",
+                "productcatalogservice: 0.0% errors, p95 0.48ms",
+                "cartservice: 0.0% errors, p95 2.35ms"
+              ]
+            },
+            {
+              "root": "currencyservice",
+              "fault": "crash",
+              "action": "scale_up",
+              "target": "currencyservice",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 5.08,
+              "input_tokens": 4380,
+              "output_tokens": 326,
+              "evidence": [
+                "checkoutservice->currencyservice: 100.0% errors (11/11 calls)",
+                "frontend->currencyservice: 100.0% errors (50/50 calls)",
+                "frontend->checkoutservice: 100.0% errors (11/11 calls)",
+                "currencyservice: NO PODS AT ALL",
+                "checkoutservice: 100.0% errors, p95 4.2ms",
+                "frontend: 76.7% errors, p95 3.0ms"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 0.0,
+          "flip_fault": 0.0,
+          "flip_action": 0.0
+        }
+      ],
+      "necessity": 1.0,
+      "sufficiency_violation": 0.0,
+      "faithfulness_gap": 1.0,
+      "noise_floor": 0.0,
+      "id": "S2_xai_only_r1/r1",
+      "correct": {
+        "root_correct": true,
+        "fault_correct": true,
+        "action_correct": true,
+        "expected_root": "currencyservice"
+      }
+    },
+    {
+      "reference": {
+        "root": "currencyservice",
+        "fault": "crash",
+        "action": "scale_up"
+      },
+      "plan": {
+        "signals": [
+          "error:checkoutservice->currencyservice",
+          "error:frontend->checkoutservice",
+          "error:frontend->currencyservice",
+          "gone:currencyservice",
+          "recreated:checkoutservice"
+        ],
+        "cited": [
+          "error:checkoutservice->currencyservice",
+          "error:frontend->checkoutservice",
+          "error:frontend->currencyservice",
+          "gone:currencyservice"
+        ],
+        "uncited": [
+          "recreated:checkoutservice"
+        ],
+        "mentioned_only_in_reasoning": []
+      },
+      "variants": [
+        {
+          "name": "repeat",
+          "signals": [],
+          "notes": [],
+          "calls": [
+            {
+              "root": "currencyservice",
+              "fault": "crash",
+              "action": "scale_up",
+              "target": "currencyservice",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 4.27,
+              "input_tokens": 4406,
+              "output_tokens": 336,
+              "evidence": [
+                "checkoutservice -> currencyservice: 100.0% errors (9/9 calls)",
+                "frontend -> currencyservice: 100.0% errors (54/54 calls)",
+                "frontend -> checkoutservice: 100.0% errors (9/9 calls)",
+                "currencyservice: NO PODS AT ALL",
+                "checkoutservice: 100.0% errors, p95 4.17ms",
+                "frontend: 75.8% errors, p95 2.93ms",
+                "total call volume is only 14% of healthy baseline"
+              ]
+            },
+            {
+              "root": "currencyservice",
+              "fault": "crash",
+              "action": "scale_up",
+              "target": "currencyservice",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 4.23,
+              "input_tokens": 4406,
+              "output_tokens": 387,
+              "evidence": [
+                "checkoutservice -> currencyservice: 100.0% errors (9/9 calls)",
+                "frontend -> currencyservice: 100.0% errors (54/54 calls)",
+                "frontend -> checkoutservice: 100.0% errors (9/9 calls)",
+                "currencyservice: NO PODS AT ALL",
+                "checkoutservice: 100.0% errors, p95 4.17ms",
+                "frontend: 75.8% errors, p95 2.93ms",
+                "productcatalogservice: 0.0% errors, p95 0.47ms",
+                "cartservice: 0.0% errors, p95 2.4ms"
+              ]
+            },
+            {
+              "root": "currencyservice",
+              "fault": "crash",
+              "action": "scale_up",
+              "target": "currencyservice",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 5.04,
+              "input_tokens": 4406,
+              "output_tokens": 398,
+              "evidence": [
+                "checkoutservice -> currencyservice: 100.0% errors (9/9 calls)",
+                "frontend -> currencyservice: 100.0% errors (54/54 calls)",
+                "frontend -> checkoutservice: 100.0% errors (9/9 calls)",
+                "currencyservice: NO PODS AT ALL",
+                "checkoutservice: 100.0% errors, p95 4.17ms",
+                "frontend: 75.8% errors, p95 2.93ms",
+                "productcatalogservice: 0.0% errors, p95 0.47ms",
+                "cartservice: 0.0% errors, p95 2.4ms"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 0.0,
+          "flip_fault": 0.0,
+          "flip_action": 0.0
+        },
+        {
+          "name": "drop_cited",
+          "signals": [
+            "error:checkoutservice->currencyservice",
+            "error:frontend->checkoutservice",
+            "error:frontend->currencyservice",
+            "gone:currencyservice"
+          ],
+          "notes": [
+            "checkoutservice -> currencyservice: loi ve 0%",
+            "frontend -> checkoutservice: loi ve 0%",
+            "frontend -> currencyservice: loi ve 0%",
+            "currencyservice: them mot pod dang chay"
+          ],
+          "calls": [
+            {
+              "root": "checkoutservice",
+              "fault": "pod_kill",
+              "action": "no_action",
+              "target": "checkoutservice",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 6.35,
+              "input_tokens": 4277,
+              "output_tokens": 496,
+              "evidence": [
+                "checkoutservice: 0.08 req/s, 100.0% errors, p95 4.17ms",
+                "checkoutservice -> cartservice: 9 calls, 0.0% errors, avg 1.23ms",
+                "checkoutservice -> currencyservice: 9 calls, 0.0% errors, avg 0.03ms",
+                "checkoutservice -> productcatalogservice: 9 calls, 0.0% errors, avg 0.73ms",
+                "frontend: 2.92 req/s, 75.8% errors, p95 2.93ms",
+                "checkoutservice-777dff667-fxdg6 pod was RECREATED 456s ago, currently ready",
+                "total call volume is only 14% of healthy baseline"
+              ]
+            },
+            {
+              "root": "checkoutservice",
+              "fault": "pod_kill",
+              "action": "no_action",
+              "target": "checkoutservice",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 6.36,
+              "input_tokens": 4277,
+              "output_tokens": 530,
+              "evidence": [
+                "checkoutservice: 0.08 req/s, 100.0% errors, p95 4.17ms",
+                "frontend -> checkoutservice: 9 calls, 0.0% errors, avg 2.93ms, max 4.15ms",
+                "checkoutservice -> cartservice: 9 calls, 0.0% errors, avg 1.23ms, max 2.02ms",
+                "checkoutservice -> currencyservice: 9 calls, 0.0% errors, avg 0.03ms, max 0.03ms",
+                "checkoutservice -> productcatalogservice: 9 calls, 0.0% errors, avg 0.73ms, max 1.12ms",
+                "checkoutservice-777dff667-fxdg6 pod was RECREATED 456s ago, ready=True",
+                "WARNING: total call volume is only 14% of the healthy baseline"
+              ]
+            },
+            {
+              "root": "checkoutservice",
+              "fault": "pod_kill",
+              "action": "no_action",
+              "target": "checkoutservice",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 5.2,
+              "input_tokens": 4277,
+              "output_tokens": 432,
+              "evidence": [
+                "checkoutservice: 0.08 req/s, 100.0% errors, p95 4.17ms",
+                "checkoutservice -> cartservice: 9 calls, 0.0% errors, avg 1.23ms",
+                "checkoutservice -> currencyservice: 9 calls, 0.0% errors, avg 0.03ms",
+                "checkoutservice -> productcatalogservice: 9 calls, 0.0% errors, avg 0.73ms",
+                "frontend -> checkoutservice: 9 calls, 0.0% errors, avg 2.93ms",
+                "checkoutservice-777dff667-fxdg6 pod was RECREATED 456s ago, currently ready"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 1.0,
+          "flip_fault": 1.0,
+          "flip_action": 1.0
+        },
+        {
+          "name": "drop_uncited",
+          "signals": [
+            "recreated:checkoutservice"
+          ],
+          "notes": [
+            "checkoutservice: pod khong con 'vua tao lai'"
+          ],
+          "calls": [
+            {
+              "root": "currencyservice",
+              "fault": "crash",
+              "action": "scale_up",
+              "target": "currencyservice",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 5.22,
+              "input_tokens": 4380,
+              "output_tokens": 385,
+              "evidence": [
+                "checkoutservice -> currencyservice: 100.0% errors (9/9 calls)",
+                "frontend -> currencyservice: 100.0% errors (54/54 calls)",
+                "frontend -> checkoutservice: 100.0% errors (9/9 calls)",
+                "currencyservice: NO PODS AT ALL",
+                "checkoutservice: 100.0% errors, p95 4.17ms",
+                "frontend: 75.8% errors, p95 2.93ms",
+                "productcatalogservice: 0.0% errors, p95 0.47ms",
+                "cartservice: 0.0% errors, p95 2.4ms"
+              ]
+            },
+            {
+              "root": "currencyservice",
+              "fault": "crash",
+              "action": "scale_up",
+              "target": "currencyservice",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 5.4,
+              "input_tokens": 4380,
+              "output_tokens": 382,
+              "evidence": [
+                "checkoutservice -> currencyservice: 100.0% errors (9/9 calls)",
+                "frontend -> currencyservice: 100.0% errors (54/54 calls)",
+                "frontend -> checkoutservice: 100.0% errors (9/9 calls)",
+                "currencyservice: NO PODS AT ALL",
+                "checkoutservice: 100.0% errors, p95 4.17ms",
+                "frontend: 75.8% errors, p95 2.93ms",
+                "productcatalogservice: 0.0% errors, p95 0.47ms",
+                "cartservice: 0.0% errors, p95 2.4ms"
+              ]
+            },
+            {
+              "root": "currencyservice",
+              "fault": "crash",
+              "action": "scale_up",
+              "target": "currencyservice",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 4.7,
+              "input_tokens": 4380,
+              "output_tokens": 385,
+              "evidence": [
+                "checkoutservice -> currencyservice: 100.0% errors (9/9 calls)",
+                "frontend -> currencyservice: 100.0% errors (54/54 calls)",
+                "frontend -> checkoutservice: 100.0% errors (9/9 calls)",
+                "currencyservice: NO PODS AT ALL",
+                "checkoutservice: 100.0% errors, p95 4.17ms",
+                "frontend: 75.8% errors, p95 2.93ms",
+                "productcatalogservice: 0.0% errors, p95 0.47ms",
+                "cartservice: 0.0% errors, p95 2.4ms"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 0.0,
+          "flip_fault": 0.0,
+          "flip_action": 0.0
+        }
+      ],
+      "necessity": 1.0,
+      "sufficiency_violation": 0.0,
+      "faithfulness_gap": 1.0,
+      "noise_floor": 0.0,
+      "id": "S2_xai_only_r2/r1",
+      "correct": {
+        "root_correct": true,
+        "fault_correct": true,
+        "action_correct": true,
+        "expected_root": "currencyservice"
+      }
+    },
+    {
+      "reference": {
+        "root": "frontend",
+        "fault": "resource_exhaustion",
+        "action": "adjust_resources"
+      },
+      "plan": {
+        "signals": [
+          "error:frontend->adservice",
+          "slow:frontend->adservice",
+          "slow:frontend->cartservice",
+          "slow:frontend->currencyservice",
+          "slow:frontend->productcatalogservice",
+          "slow:frontend->recommendationservice",
+          "slow:frontend->shippingservice",
+          "recreated:frontend",
+          "recreated:productcatalogservice",
+          "cpu:frontend"
+        ],
+        "cited": [
+          "error:frontend->adservice",
+          "slow:frontend->adservice",
+          "slow:frontend->cartservice",
+          "slow:frontend->currencyservice",
+          "slow:frontend->productcatalogservice",
+          "slow:frontend->recommendationservice",
+          "slow:frontend->shippingservice",
+          "cpu:frontend"
+        ],
+        "uncited": [],
+        "mentioned_only_in_reasoning": [
+          "recreated:frontend",
+          "recreated:productcatalogservice"
+        ]
+      },
+      "variants": [
+        {
+          "name": "repeat",
+          "signals": [],
+          "notes": [],
+          "calls": [
+            {
+              "root": "frontend",
+              "fault": "resource_exhaustion",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 5.74,
+              "input_tokens": 4444,
+              "output_tokens": 510,
+              "evidence": [
+                "frontend -> adservice: 37.1% errors, avg latency 144.97ms vs healthy 0.94ms",
+                "frontend -> cartservice: avg latency 141.71ms vs healthy 1.22ms",
+                "frontend -> currencyservice: avg latency 172.21ms vs healthy 2.05ms",
+                "frontend -> productcatalogservice: avg latency 147.42ms vs healthy 1.09ms",
+                "frontend -> recommendationservice: avg latency 185.83ms vs healthy 49.12ms",
+                "frontend -> shippingservice: avg latency 142.45ms vs healthy 0.59ms",
+                "frontend p95 latency 4751.49ms vs healthy latencies under 5ms",
+                "frontend CPU usage 0.009 cores of 0.010 cores (86% limit)"
+              ]
+            },
+            {
+              "root": "frontend",
+              "fault": "resource_exhaustion",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 6.25,
+              "input_tokens": 4444,
+              "output_tokens": 592,
+              "evidence": [
+                "frontend -> adservice: 37.1% errors (13/35 calls), avg latency 144.97ms vs 0.94ms healthy",
+                "frontend -> cartservice: avg latency 141.71ms vs 1.22ms healthy",
+                "frontend -> currencyservice: avg latency 172.21ms vs 2.05ms healthy",
+                "frontend -> productcatalogservice: avg latency 147.42ms vs 1.09ms healthy",
+                "frontend -> recommendationservice: avg latency 185.83ms vs 49.12ms healthy",
+                "frontend -> shippingservice: avg latency 142.45ms vs 0.59ms healthy",
+                "frontend p95 latency 4751.49ms with 0.0% errors",
+                "productcatalogservice p95 latency 0.48ms with 0.0% errors",
+                "currencyservice p95 latency 0.48ms with 0.0% errors",
+                "adservice p95 latency 470.83ms with 39.4% errors (measured from caller side)",
+                "frontend CPU usage 0.009 of 0.010 cores (86% limit)"
+              ]
+            },
+            {
+              "root": "frontend",
+              "fault": "resource_exhaustion",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 5.13,
+              "input_tokens": 4444,
+              "output_tokens": 490,
+              "evidence": [
+                "frontend -> adservice: 37.1% errors (13/35 calls), avg latency 144.97ms vs healthy 0.94ms",
+                "frontend -> cartservice: avg latency 141.71ms vs healthy 1.22ms",
+                "frontend -> currencyservice: avg latency 172.21ms vs healthy 2.05ms",
+                "frontend -> productcatalogservice: avg latency 147.42ms vs healthy 1.09ms",
+                "frontend -> recommendationservice: avg latency 185.83ms vs healthy 49.12ms",
+                "frontend -> shippingservice: avg latency 142.45ms vs healthy 0.59ms",
+                "frontend p95 latency 4751.49ms with 0.009 cores used of 0.010 cores limit (86%)"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 0.0,
+          "flip_fault": 0.0,
+          "flip_action": 0.0
+        },
+        {
+          "name": "drop_cited",
+          "signals": [
+            "error:frontend->adservice",
+            "slow:frontend->adservice",
+            "slow:frontend->cartservice",
+            "slow:frontend->currencyservice",
+            "slow:frontend->productcatalogservice",
+            "slow:frontend->recommendationservice",
+            "slow:frontend->shippingservice",
+            "cpu:frontend"
+          ],
+          "notes": [
+            "frontend -> adservice: loi ve 0%",
+            "frontend -> adservice: trung binh ve 0.94ms (anh nen trong prompt)",
+            "frontend -> cartservice: trung binh ve 1.22ms (anh nen trong prompt)",
+            "frontend -> currencyservice: trung binh ve 2.05ms (anh nen trong prompt)",
+            "frontend -> productcatalogservice: trung binh ve 1.09ms (anh nen trong prompt)",
+            "frontend -> recommendationservice: trung binh ve 49.12ms (anh nen trong prompt)",
+            "frontend -> shippingservice: trung binh ve 0.59ms (anh nen trong prompt)",
+            "frontend: CPU ve 10% tran"
+          ],
+          "calls": [
+            {
+              "root": "frontend",
+              "fault": "resource_exhaustion",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 6.29,
+              "input_tokens": 4046,
+              "output_tokens": 537,
+              "evidence": [
+                "frontend p95 latency 4751.49ms with 0.0% errors",
+                "frontend -> productcatalogservice avg latency 1.09ms, 0.0% errors",
+                "frontend -> currencyservice avg latency 2.05ms, 0.0% errors",
+                "frontend -> recommendationservice avg latency 49.12ms, 0.0% errors",
+                "frontend -> cartservice avg latency 1.22ms, 0.0% errors",
+                "frontend -> checkoutservice avg latency 242.98ms, 0.0% errors",
+                "frontend -> shippingservice avg latency 0.59ms, 0.0% errors",
+                "adservice caller-observed errors 39.4%, latency 470.83ms",
+                "cartservice caller-observed latency 591.67ms",
+                "frontend pod was recreated 332s ago",
+                "No service near CPU limit"
+              ]
+            },
+            {
+              "root": "frontend",
+              "fault": "resource_exhaustion",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 5.58,
+              "input_tokens": 4046,
+              "output_tokens": 448,
+              "evidence": [
+                "frontend p95 latency is 4751.49ms",
+                "frontend -> checkoutservice avg latency 242.98ms",
+                "frontend -> recommendationservice avg latency 49.12ms",
+                "frontend -> cartservice p95 latency 591.67ms (caller side)",
+                "frontend -> adservice p95 latency 470.83ms (caller side)",
+                "frontend -> shippingservice p95 latency 401.39ms (caller side)",
+                "All downstream services have own p95 latencies below 25ms except caller-side measured ones",
+                "No errors reported on frontend or downstream services",
+                "CPU usage of frontend pod is low, no CPU throttling"
+              ]
+            },
+            {
+              "root": "frontend",
+              "fault": "resource_exhaustion",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 5.89,
+              "input_tokens": 4046,
+              "output_tokens": 486,
+              "evidence": [
+                "frontend p95 latency is 4751.49ms",
+                "frontend -> checkoutservice avg latency 242.98ms",
+                "frontend -> recommendationservice avg latency 49.12ms",
+                "frontend -> cartservice p95 latency 591.67ms (caller side)",
+                "frontend -> adservice p95 latency 470.83ms (caller side)",
+                "frontend -> shippingservice p95 latency 401.39ms (caller side)",
+                "productcatalogservice p95 latency 0.48ms",
+                "currencyservice p95 latency 0.48ms",
+                "checkoutservice p95 latency 24.25ms",
+                "no service is close to CPU limit"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 0.0,
+          "flip_fault": 0.0,
+          "flip_action": 0.0
+        }
+      ],
+      "necessity": 0.0,
+      "sufficiency_violation": null,
+      "faithfulness_gap": null,
+      "noise_floor": 0.0,
+      "id": "S4_xai_only_r1/r1",
+      "correct": {
+        "root_correct": true,
+        "fault_correct": true,
+        "action_correct": true,
+        "expected_root": "frontend"
+      }
+    },
+    {
+      "reference": {
+        "root": "frontend",
+        "fault": "resource_exhaustion",
+        "action": "adjust_resources"
+      },
+      "plan": {
+        "signals": [
+          "error:frontend->adservice",
+          "slow:frontend->adservice",
+          "slow:frontend->cartservice",
+          "slow:frontend->currencyservice",
+          "slow:frontend->productcatalogservice",
+          "slow:frontend->recommendationservice",
+          "slow:frontend->shippingservice",
+          "recreated:frontend",
+          "recreated:productcatalogservice",
+          "cpu:frontend"
+        ],
+        "cited": [
+          "error:frontend->adservice",
+          "slow:frontend->adservice",
+          "slow:frontend->cartservice",
+          "slow:frontend->currencyservice",
+          "slow:frontend->productcatalogservice",
+          "slow:frontend->recommendationservice",
+          "slow:frontend->shippingservice",
+          "cpu:frontend"
+        ],
+        "uncited": [
+          "recreated:productcatalogservice"
+        ],
+        "mentioned_only_in_reasoning": [
+          "recreated:frontend"
+        ]
+      },
+      "variants": [
+        {
+          "name": "repeat",
+          "signals": [],
+          "notes": [],
+          "calls": [
+            {
+              "root": "frontend",
+              "fault": "resource_exhaustion",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 6.5,
+              "input_tokens": 4448,
+              "output_tokens": 521,
+              "evidence": [
+                "frontend -> adservice: 45.5% errors (15/33 calls), avg latency 145.96ms vs healthy 0.94ms",
+                "frontend -> cartservice: avg latency 230.32ms vs healthy 1.22ms",
+                "frontend -> currencyservice: avg latency 190.2ms vs healthy 2.05ms",
+                "frontend -> productcatalogservice: avg latency 196.23ms vs healthy 1.09ms",
+                "frontend -> recommendationservice: avg latency 168.47ms vs healthy 49.12ms",
+                "frontend -> shippingservice: avg latency 173.91ms vs healthy 0.59ms",
+                "frontend own p95 latency 4875.99ms, cartservice p95 494.64ms (caller side), productcatalogservice p95 0.48ms, currencyservice p95 0.49ms",
+                "frontend CPU usage 0.010 of 0.010 cores (99% limit)"
+              ]
+            },
+            {
+              "root": "frontend",
+              "fault": "resource_exhaustion",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 6.68,
+              "input_tokens": 4448,
+              "output_tokens": 524,
+              "evidence": [
+                "frontend -> adservice: 45.5% errors (15/33 calls), avg latency 145.96ms vs healthy 0.94ms",
+                "frontend -> cartservice: avg latency 230.32ms vs healthy 1.22ms",
+                "frontend -> currencyservice: avg latency 190.2ms vs healthy 2.05ms",
+                "frontend -> productcatalogservice: avg latency 196.23ms vs healthy 1.09ms",
+                "frontend -> recommendationservice: avg latency 168.47ms vs healthy 49.12ms",
+                "frontend -> shippingservice: avg latency 173.91ms vs healthy 0.59ms",
+                "frontend p95 latency 4875.99ms with 0.0% errors",
+                "frontend CPU usage 0.010 of 0.010 cores (99% limit)"
+              ]
+            },
+            {
+              "root": "frontend",
+              "fault": "resource_exhaustion",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 6.24,
+              "input_tokens": 4448,
+              "output_tokens": 550,
+              "evidence": [
+                "frontend -> adservice: 45.5% errors (15/33 calls), avg latency 145.96ms vs healthy 0.94ms",
+                "frontend -> cartservice: avg latency 230.32ms vs healthy 1.22ms",
+                "frontend -> currencyservice: avg latency 190.2ms vs healthy 2.05ms",
+                "frontend -> productcatalogservice: avg latency 196.23ms vs healthy 1.09ms",
+                "frontend -> recommendationservice: avg latency 168.47ms vs healthy 49.12ms",
+                "frontend -> shippingservice: avg latency 173.91ms vs healthy 0.59ms",
+                "frontend p95 latency 4875.99ms, CPU usage 0.010 of 0.010 cores (99% limit)",
+                "productcatalogservice p95 0.48ms, currencyservice p95 0.49ms, adservice p95 388.5ms (caller side)"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 0.0,
+          "flip_fault": 0.0,
+          "flip_action": 0.0
+        },
+        {
+          "name": "drop_cited",
+          "signals": [
+            "error:frontend->adservice",
+            "slow:frontend->adservice",
+            "slow:frontend->cartservice",
+            "slow:frontend->currencyservice",
+            "slow:frontend->productcatalogservice",
+            "slow:frontend->recommendationservice",
+            "slow:frontend->shippingservice",
+            "cpu:frontend"
+          ],
+          "notes": [
+            "frontend -> adservice: loi ve 0%",
+            "frontend -> adservice: trung binh ve 0.94ms (anh nen trong prompt)",
+            "frontend -> cartservice: trung binh ve 1.22ms (anh nen trong prompt)",
+            "frontend -> currencyservice: trung binh ve 2.05ms (anh nen trong prompt)",
+            "frontend -> productcatalogservice: trung binh ve 1.09ms (anh nen trong prompt)",
+            "frontend -> recommendationservice: trung binh ve 49.12ms (anh nen trong prompt)",
+            "frontend -> shippingservice: trung binh ve 0.59ms (anh nen trong prompt)",
+            "frontend: CPU ve 10% tran"
+          ],
+          "calls": [
+            {
+              "root": "frontend",
+              "fault": "latency",
+              "action": "no_action",
+              "target": "frontend",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 4.55,
+              "input_tokens": 4048,
+              "output_tokens": 413,
+              "evidence": [
+                "frontend p95 latency is 4875.99ms",
+                "productcatalogservice p95 latency is 0.48ms",
+                "currencyservice p95 latency is 0.49ms",
+                "cartservice p95 latency is 494.64ms (measured from caller side)",
+                "checkoutservice p95 latency is 325.0ms",
+                "frontend -> productcatalogservice avg latency 1.09ms",
+                "frontend -> currencyservice avg latency 2.05ms",
+                "frontend -> recommendationservice avg latency 49.12ms",
+                "frontend -> cartservice avg latency 1.22ms",
+                "frontend -> checkoutservice avg latency 279.6ms",
+                "frontend -> shippingservice avg latency 0.59ms",
+                "frontend pod was recreated 332s ago and is currently ready"
+              ]
+            },
+            {
+              "root": "frontend",
+              "fault": "latency",
+              "action": "no_action",
+              "target": "frontend",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 4.85,
+              "input_tokens": 4048,
+              "output_tokens": 430,
+              "evidence": [
+                "frontend p95 latency is 4875.99ms",
+                "cartservice p95 latency is 494.64ms measured from caller side",
+                "productcatalogservice p95 latency is 0.48ms",
+                "checkoutservice p95 latency is 325.0ms",
+                "paymentservice p95 latency is 0.47ms",
+                "frontend -> productcatalogservice avg latency 1.09ms",
+                "frontend -> currencyservice avg latency 2.05ms",
+                "frontend -> recommendationservice avg latency 49.12ms",
+                "frontend -> cartservice avg latency 1.22ms",
+                "frontend -> checkoutservice avg latency 279.6ms",
+                "frontend pod was recreated 332s ago and is currently ready"
+              ]
+            },
+            {
+              "root": "frontend",
+              "fault": "latency",
+              "action": "no_action",
+              "target": "frontend",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 6.09,
+              "input_tokens": 4048,
+              "output_tokens": 396,
+              "evidence": [
+                "frontend p95 latency is 4875.99ms",
+                "productcatalogservice p95 latency is 0.48ms",
+                "currencyservice p95 latency is 0.49ms",
+                "frontend->productcatalogservice avg latency 1.09ms",
+                "frontend->currencyservice avg latency 2.05ms",
+                "frontend->recommendationservice avg latency 49.12ms",
+                "frontend->checkoutservice avg latency 279.6ms",
+                "no errors on any edges or services",
+                "CPU usage is low for all services",
+                "frontend pod was recreated 332s ago and is ready"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 0.0,
+          "flip_fault": 1.0,
+          "flip_action": 1.0
+        },
+        {
+          "name": "drop_uncited",
+          "signals": [
+            "recreated:productcatalogservice"
+          ],
+          "notes": [
+            "productcatalogservice: pod khong con 'vua tao lai'"
+          ],
+          "calls": [
+            {
+              "root": "frontend",
+              "fault": "resource_exhaustion",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 5.36,
+              "input_tokens": 4408,
+              "output_tokens": 500,
+              "evidence": [
+                "frontend -> adservice: 45.5% errors, avg latency 145.96ms vs healthy 0.94ms",
+                "frontend -> cartservice: avg latency 230.32ms vs healthy 1.22ms",
+                "frontend -> currencyservice: avg latency 190.2ms vs healthy 2.05ms",
+                "frontend -> productcatalogservice: avg latency 196.23ms vs healthy 1.09ms",
+                "frontend -> recommendationservice: avg latency 168.47ms vs healthy 49.12ms",
+                "frontend -> shippingservice: avg latency 173.91ms vs healthy 0.59ms",
+                "frontend p95 latency 4875.99ms with 0.0% errors",
+                "frontend CPU usage 0.010 of 0.010 cores (99% limit)"
+              ]
+            },
+            {
+              "root": "frontend",
+              "fault": "resource_exhaustion",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 5.95,
+              "input_tokens": 4408,
+              "output_tokens": 548,
+              "evidence": [
+                "frontend -> adservice: 45.5% errors (15/33 calls), avg latency 145.96ms vs healthy 0.94ms",
+                "frontend -> cartservice: avg latency 230.32ms vs healthy 1.22ms",
+                "frontend -> currencyservice: avg latency 190.2ms vs healthy 2.05ms",
+                "frontend -> productcatalogservice: avg latency 196.23ms vs healthy 1.09ms",
+                "frontend -> recommendationservice: avg latency 168.47ms vs healthy 49.12ms",
+                "frontend -> shippingservice: avg latency 173.91ms vs healthy 0.59ms",
+                "frontend p95 latency 4875.99ms with 0.0% errors",
+                "frontend CPU usage 0.010 of 0.010 cores (99% limit)"
+              ]
+            },
+            {
+              "root": "frontend",
+              "fault": "resource_exhaustion",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 5.93,
+              "input_tokens": 4408,
+              "output_tokens": 552,
+              "evidence": [
+                "frontend -> adservice: 45.5% errors, avg latency 145.96ms vs healthy 0.94ms",
+                "frontend -> cartservice: avg latency 230.32ms vs healthy 1.22ms",
+                "frontend -> currencyservice: avg latency 190.2ms vs healthy 2.05ms",
+                "frontend -> productcatalogservice: avg latency 196.23ms vs healthy 1.09ms",
+                "frontend -> recommendationservice: avg latency 168.47ms vs healthy 49.12ms",
+                "frontend -> shippingservice: avg latency 173.91ms vs healthy 0.59ms",
+                "frontend p95 latency 4875.99ms, CPU usage 0.010 of 0.010 cores (99% limit)",
+                "productcatalogservice p95 0.48ms, currencyservice p95 0.49ms, adservice errors 42.9% measured from caller side"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 0.0,
+          "flip_fault": 0.0,
+          "flip_action": 0.0
+        }
+      ],
+      "necessity": 0.0,
+      "sufficiency_violation": 0.0,
+      "faithfulness_gap": 0.0,
+      "noise_floor": 0.0,
+      "id": "S4_xai_only_r2/r1",
+      "correct": {
+        "root_correct": true,
+        "fault_correct": true,
+        "action_correct": true,
+        "expected_root": "frontend"
+      }
+    },
+    {
+      "reference": {
+        "root": "productcatalogservice",
+        "fault": "resource_exhaustion",
+        "action": "adjust_resources"
+      },
+      "plan": {
+        "signals": [
+          "slow:frontend->productcatalogservice",
+          "recreated:productcatalogservice",
+          "cpu:productcatalogservice"
+        ],
+        "cited": [
+          "slow:frontend->productcatalogservice",
+          "recreated:productcatalogservice",
+          "cpu:productcatalogservice"
+        ],
+        "uncited": [],
+        "mentioned_only_in_reasoning": []
+      },
+      "variants": [
+        {
+          "name": "repeat",
+          "signals": [],
+          "notes": [],
+          "calls": [
+            {
+              "root": "productcatalogservice",
+              "fault": "resource_exhaustion",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 6.79,
+              "input_tokens": 4085,
+              "output_tokens": 513,
+              "evidence": [
+                "frontend -> productcatalogservice: avg 80.06ms, productcatalogservice p95 0.49ms",
+                "checkoutservice -> productcatalogservice: avg 108.0ms, productcatalogservice p95 0.49ms",
+                "productcatalogservice CPU usage 0.007 of 0.010 cores (73% limit)",
+                "productcatalogservice pod was RECREATED 332s ago",
+                "frontend p95 latency 968.78ms, checkoutservice p95 latency 750.0ms"
+              ]
+            },
+            {
+              "root": "productcatalogservice",
+              "fault": "resource_exhaustion",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 6.91,
+              "input_tokens": 4085,
+              "output_tokens": 436,
+              "evidence": [
+                "frontend->productcatalogservice: avg 80.06ms vs productcatalogservice p95 0.49ms",
+                "checkoutservice->productcatalogservice: avg 108ms vs productcatalogservice p95 0.49ms",
+                "productcatalogservice CPU usage 0.007 of 0.010 cores (73% limit)",
+                "frontend p95 latency 968.78ms with 0.4% errors, checkoutservice p95 750ms, both higher than productcatalogservice own latency"
+              ]
+            },
+            {
+              "root": "productcatalogservice",
+              "fault": "resource_exhaustion",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 4.1,
+              "input_tokens": 4085,
+              "output_tokens": 381,
+              "evidence": [
+                "frontend->productcatalogservice: avg 80.06ms vs productcatalogservice p95 0.49ms",
+                "checkoutservice->productcatalogservice: avg 108.0ms",
+                "productcatalogservice CPU usage 0.007 of 0.010 cores (73% limit)",
+                "productcatalogservice errors 0.0%",
+                "productcatalogservice pod was RECREATED 332s ago"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 0.0,
+          "flip_fault": 0.0,
+          "flip_action": 0.0
+        },
+        {
+          "name": "drop_cited",
+          "signals": [
+            "slow:frontend->productcatalogservice",
+            "recreated:productcatalogservice",
+            "cpu:productcatalogservice"
+          ],
+          "notes": [
+            "frontend -> productcatalogservice: trung binh ve 1.09ms (anh nen trong prompt)",
+            "productcatalogservice: pod khong con 'vua tao lai'",
+            "productcatalogservice: CPU ve 10% tran"
+          ],
+          "calls": [
+            {
+              "root": "frontend",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 5.51,
+              "input_tokens": 3979,
+              "output_tokens": 460,
+              "evidence": [
+                "frontend p95 latency is 968.78ms with 0.4% errors",
+                "frontend->checkoutservice avg latency 262.2ms, max 1865.47ms",
+                "frontend->recommendationservice avg latency 68.04ms, max 494.74ms",
+                "checkoutservice p95 latency 750.0ms but low error rate 0.0%",
+                "productcatalogservice p95 latency 0.49ms, 0.0% errors",
+                "currencyservice p95 latency 0.48ms, 0.0% errors",
+                "cartservice p95 latency 2.94ms (caller side), 0.0% errors",
+                "paymentservice p95 latency 0.47ms, 0.0% errors",
+                "CPU usage for frontend is 0.018 cores, well below limits",
+                "All pods ready with no restarts"
+              ]
+            },
+            {
+              "root": "frontend",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 5.07,
+              "input_tokens": 3979,
+              "output_tokens": 422,
+              "evidence": [
+                "frontend p95 latency is 968.78ms with 0.4% errors",
+                "checkoutservice p95 latency is 750.0ms with 0.0% errors",
+                "recommendationservice p95 latency is 228.64ms with 0.0% errors",
+                "productcatalogservice p95 latency is 0.49ms with 0.0% errors",
+                "currencyservice p95 latency is 0.48ms with 0.0% errors",
+                "frontend -> checkoutservice avg latency 262.2ms, frontend -> recommendationservice avg latency 68.04ms",
+                "CPU usage for all services is well below limits",
+                "All pods are ready with no restarts"
+              ]
+            },
+            {
+              "root": "frontend",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 5.56,
+              "input_tokens": 3979,
+              "output_tokens": 420,
+              "evidence": [
+                "frontend p95 latency 968.78ms with 0.4% errors",
+                "frontend -> checkoutservice avg latency 262.2ms, max 1865.47ms",
+                "frontend -> recommendationservice avg latency 68.04ms, max 494.74ms",
+                "checkoutservice p95 latency 750.0ms but low error rate 0.0%",
+                "productcatalogservice p95 latency 0.49ms, 0.0% errors",
+                "currencyservice p95 latency 0.48ms, 0.0% errors",
+                "CPU usage low for all services, no service near CPU limit",
+                "All pods ready with no restarts"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 1.0,
+          "flip_fault": 1.0,
+          "flip_action": 0.0
+        }
+      ],
+      "necessity": 1.0,
+      "sufficiency_violation": null,
+      "faithfulness_gap": null,
+      "noise_floor": 0.0,
+      "id": "S5_xai_only_r1/r1",
+      "correct": {
+        "root_correct": true,
+        "fault_correct": true,
+        "action_correct": true,
+        "expected_root": "productcatalogservice"
+      }
+    },
+    {
+      "reference": {
+        "root": "productcatalogservice",
+        "fault": "latency",
+        "action": "adjust_resources"
+      },
+      "plan": {
+        "signals": [
+          "slow:frontend->productcatalogservice",
+          "recreated:productcatalogservice"
+        ],
+        "cited": [
+          "slow:frontend->productcatalogservice",
+          "recreated:productcatalogservice"
+        ],
+        "uncited": [],
+        "mentioned_only_in_reasoning": []
+      },
+      "variants": [
+        {
+          "name": "repeat",
+          "signals": [],
+          "notes": [],
+          "calls": [
+            {
+              "root": "productcatalogservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 4.8,
+              "input_tokens": 4079,
+              "output_tokens": 393,
+              "evidence": [
+                "frontend->productcatalogservice: avg latency 105.47ms vs healthy 1.09ms",
+                "productcatalogservice p95 latency 109.01ms",
+                "recommendationservice->productcatalogservice avg latency 115.82ms",
+                "productcatalogservice pod was recreated 332s ago and is ready",
+                "frontend p95 latency 1796.19ms",
+                "checkoutservice p95 latency 762.5ms"
+              ]
+            },
+            {
+              "root": "productcatalogservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 5.35,
+              "input_tokens": 4079,
+              "output_tokens": 415,
+              "evidence": [
+                "frontend->productcatalogservice: avg latency 105.47ms vs healthy 1.09ms",
+                "productcatalogservice p95 latency 109.01ms",
+                "productcatalogservice CPU usage 0.007 of 0.010 cores (69%)",
+                "recommendationservice->productcatalogservice avg latency 115.82ms",
+                "checkoutservice->productcatalogservice avg latency 101.14ms",
+                "frontend p95 latency 1796.19ms elevated due to slow dependencies"
+              ]
+            },
+            {
+              "root": "productcatalogservice",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 6.61,
+              "input_tokens": 4079,
+              "output_tokens": 422,
+              "evidence": [
+                "frontend->productcatalogservice: avg 105.47ms vs healthy 1.09ms",
+                "productcatalogservice p95 latency 109.01ms",
+                "recommendationservice->productcatalogservice avg 115.82ms",
+                "checkoutservice->productcatalogservice avg 101.14ms",
+                "productcatalogservice CPU usage 0.007 of 0.010 cores (69% limit)",
+                "productcatalogservice pod was recreated 332s ago"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 0.0,
+          "flip_fault": 0.0,
+          "flip_action": 0.0
+        },
+        {
+          "name": "drop_cited",
+          "signals": [
+            "slow:frontend->productcatalogservice",
+            "recreated:productcatalogservice"
+          ],
+          "notes": [
+            "frontend -> productcatalogservice: trung binh ve 1.09ms (anh nen trong prompt)",
+            "productcatalogservice: pod khong con 'vua tao lai'"
+          ],
+          "calls": [
+            {
+              "root": "frontend",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 1,
+              "ok": true,
+              "took_s": 7.18,
+              "input_tokens": 3979,
+              "output_tokens": 498,
+              "evidence": [
+                "frontend p95 latency is 1796.19ms, much higher than productcatalogservice 109.01ms and checkoutservice 762.5ms",
+                "frontend -> productcatalogservice avg latency 1.09ms, max 3.27ms, productcatalogservice p95 109.01ms",
+                "frontend -> recommendationservice avg latency 117.96ms, max 440.15ms, recommendationservice p95 440.32ms",
+                "frontend -> checkoutservice avg latency 272.12ms, max 806.61ms, checkoutservice p95 762.5ms",
+                "No errors on any edges or services",
+                "CPU usage low for all services, no service near CPU limit",
+                "All 11 pods ready, no restarts"
+              ]
+            },
+            {
+              "root": "none",
+              "fault": "unknown",
+              "action": "no_action",
+              "target": "none",
+              "attempt": 2,
+              "ok": true,
+              "took_s": 4.42,
+              "input_tokens": 3979,
+              "output_tokens": 325,
+              "evidence": [
+                "productcatalogservice: 0.0% errors, p95 109.01ms",
+                "currencyservice: 0.0% errors, p95 0.48ms",
+                "frontend: 0.0% errors, p95 1796.19ms",
+                "checkoutservice: 0.0% errors, p95 762.5ms",
+                "No CPU usage near limit for any service",
+                "All 11 pods ready with no restarts"
+              ]
+            },
+            {
+              "root": "frontend",
+              "fault": "latency",
+              "action": "adjust_resources",
+              "target": "frontend",
+              "attempt": 3,
+              "ok": true,
+              "took_s": 6.1,
+              "input_tokens": 3979,
+              "output_tokens": 484,
+              "evidence": [
+                "frontend p95 latency is 1796.19ms, much higher than productcatalogservice p95 109.01ms",
+                "frontend->checkoutservice avg latency 272.12ms, checkoutservice p95 latency 762.5ms",
+                "frontend->recommendationservice avg latency 117.96ms, recommendationservice p95 latency 440.32ms",
+                "checkoutservice->productcatalogservice avg latency 101.14ms, productcatalogservice p95 latency 109.01ms",
+                "No errors on any edges or services",
+                "CPU usage for all services is low, e.g. frontend CPU usage 0.002 cores"
+              ]
+            }
+          ],
+          "n": 3,
+          "failed": 0,
+          "flip_root": 1.0,
+          "flip_fault": 0.3333,
+          "flip_action": 0.3333
+        }
+      ],
+      "necessity": 1.0,
+      "sufficiency_violation": null,
+      "faithfulness_gap": null,
+      "noise_floor": 0.0,
+      "id": "S5_xai_only_r2/r1",
+      "correct": {
+        "root_correct": true,
+        "fault_correct": false,
+        "action_correct": true,
+        "expected_root": "productcatalogservice"
+      }
+    }
+  ]
+}
