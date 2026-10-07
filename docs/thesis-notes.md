@@ -1988,6 +1988,22 @@ Mỗi chế độ có thêm: số lần tự hoàn tác, số lần bị chặn 
 - **Tỷ lệ chuyển giao twin → production** = số lần twin phán `better` và production đo được cũng `better`, chia cho số lần twin phán `better`. Lần bị chặn ở bước áp tính là chuyển giao thất bại.
 - **Tỷ lệ thất bại do độ lệch trạng thái** = số lần bị chặn vì lệch, chia cho số lần đối sánh.
 
+### Hai lần chạy trọn vòng đầu tiên có LLM (2026-10-07, gpt-4.1-mini, `twin_verified`)
+
+**S2 — đạt.** Vòng 1 chẩn đoán đúng `currencyservice / crash`, LLM khai đúng điều kiện `replicas_eq 0`, precheck đạt, đối sánh trạng thái không lệch, `scale_up` 0→1, watch đo `better`. Vòng 2 hệ thống sạch. 319 giây, khoảng 4.500 token.
+
+**S1 — không sửa được, và lộ ra ba lỗi code.** LLM chẩn đoán đúng `productcatalogservice / latency`, tự ghi "CPU chỉ dùng 1%, không phải thiếu tài nguyên", nhưng cả ba vòng vẫn chọn tăng CPU hoặc khởi động lại, không lần nào chọn `rollback`. Một phần lý do mang tính cấu trúc: `rollback` gỡ biến môi trường, mà snapshot không cho LLM thấy biến môi trường.
+
+Ba lỗi đã sửa:
+
+1. **`compare()` để ngưỡng thời gian chờ nuốt mất tỷ lệ lỗi.** Lỗi frontend tăng 2,9% → 27,2% mà phán quyết ra `no_change`, vì p95 chạm trần 30 giây của histogram ở cả hai lần đo nên thời gian chờ đổi +0. Agent không tự hoàn tác một hành động rõ ràng có hại, trong khi `metrics.py` vẫn chấm nó harmful — hai cái thước lệch nhau. Sửa: lỗi vượt ngưỡng trên service đủ lưu lượng thì kết luận ngay.
+2. **`set_cpu_limit` luôn đặt lượng xin trước bằng trần.** Agent nâng trần lên 500m thì lượng xin trước cũng 500m. Production cộng twin xin trước 3990m trên node 4000m. Sửa: tăng trần thì giữ lượng xin trước.
+3. **`load_state` không kiểm twin đã chạy cấu hình mới chưa.** Pod mới của twin treo `Pending`, pod cũ vẫn chạy cấu hình cũ, và twin chặn `restart_pod` vì "1/2 pod sẵn sàng" — tức là vì máy hết chỗ, không phải vì hành động có hại. Sửa: chờ rollout, không xong thì báo lỗi thay vì đo trên bản sao sai.
+
+Lỗi 2 và 3 trước đây bị che bởi lỗi `wait_ready` cũ (trả về khi pod mới chưa chạy). Sửa một lỗi kiểm chứng làm lộ ra hai lỗi nằm dưới nó.
+
+Giới hạn môi trường cần ghi vào báo cáo: với 4 lõi, production cộng twin đã xin trước khoảng 90% CPU của node ngay cả khi chưa đổi gì.
+
 ## Còn nợ trước khi chạy đủ 75 ca
 
 - **Chụp ảnh nền mới và đo lại fidelity trên cluster EC2.** Ảnh nền và fidelity là đặc tính của môi trường; số của VM cũ không dùng được cho máy mới.
