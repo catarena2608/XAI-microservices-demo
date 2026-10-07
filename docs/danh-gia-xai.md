@@ -31,7 +31,7 @@ Kèm thêm **bộ chẩn đoán bằng luật** (`rule_baseline.py`) làm mốc 
 | 3 | B — E1 (`grounding.py`) | Xong | 14 câu biết trước đáp án và 4 điều kiện tiên quyết, trên snapshot thật: đúng hết. Chạy trên 1996 câu thật của phase 3 |
 | 4 | C — kiểm nhất quán (`consistency.py`) | Xong | 164 lời giải thích thật. Cả 12 câu bị cờ "tự bác bỏ hành động" đều đã đọc tay, đều đúng |
 | 5 | E — bộ chẩn đoán bằng luật (`rule_baseline.py`) | Xong | Đã chạy trên 8 ca lỗi thật, xem mục 13 |
-| 6 | D — E2 phản thực (`counterfactual.py`) | Đã chạy bản cũ, chờ chạy bản đã sửa | Bản cũ (trước mục 13.6–13.7) đã chạy thật trên k3s: mục 13.8. Kết quả chưa sạch, chưa dùng làm số báo cáo. Bản đã sửa chưa chạy: khoảng 0,17 USD, chờ bạn đồng ý |
+| 6 | D — E2 phản thực (`counterfactual.py`) | Đã chạy cả bản cũ và bản đã sửa | Bản cũ: mục 13.8, không dùng được. Bản đã sửa (8/10): [nhat-ky-lam-viec.md](nhat-ky-lam-viec.md) mục 4. Lộ thêm 2 lỗ hổng thiết kế, chưa sửa. Mới ở mức thí điểm |
 | 8 | Lần chạy đầu trên ca lỗi thật (phiên `20261007-065802`) | Xong | Mục 13: E1, C, luật, bản xem trước E2, cùng 5 lỗi của bộ chấm và của luật đã sửa, 2 vấn đề chất lượng dữ liệu |
 | 7 | Script `scripts/xai_audit.py` cùng bộ nạp `xai_cases.py` | Xong | Chạy được trên toàn bộ dữ liệu thật đang có |
 
@@ -1057,6 +1057,10 @@ Ba chi tiết đáng ghi:
 So từng ca giữa bản cũ và bản mới sẽ cho thấy lỗi ở mục 13.6 thực sự làm lệch bao nhiêu.
 
 ### 13.9. Việc tiếp
+
+> **Từ 2026-10-08, nhật ký tiếp tục ở [nhat-ky-lam-viec.md](nhat-ky-lam-viec.md).** Kết
+> quả E2 bản đã sửa, phần sửa bộ chạy (chờ pod qua 600 giây) và phiên thu dữ liệu qua
+> đêm đều ghi ở đó. Danh sách dưới đây là danh sách lúc kết thúc mục 13.
 
 - Chạy E2 bản đã sửa trên WSL: `python scripts/xai_audit.py counterfactual
   data/eval/20261007-065802 --repeats 3`, 66 lần gọi, khoảng 0,17 USD, khoảng 10 phút. Cần
