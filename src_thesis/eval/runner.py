@@ -41,6 +41,7 @@ from src_thesis.eval.preflight import (
     compare_with_previous_baseline,
     ensure_clean_slate,
     wait_for_clean_baseline,
+    wait_for_settled_pods,
 )
 from src_thesis.faults.injectors import FaultInjector, load_active_faults
 from src_thesis.faults.library import (
@@ -184,6 +185,12 @@ class EvalRunner:
             self.log(f"Dung anh nen da ghim: {self.baseline_note}")
             return True
 
+        # Pod vua khoi dong co vai lan goi cham, du doi muc "luc khoe" cua canh it luu
+        # luong — phien 20261007-065802 da bi dung vay (muc 13.5 docs/danh-gia-xai.md).
+        if not wait_for_settled_pods(self.k8s, log=self.log):
+            self.log("KHONG CHAY DUOC — co pod khoi dong lai lien tuc, anh nen se nhiem")
+            return False
+
         # Lay nen cua phien TRUOC ngay bay gio, truoc khi nen moi duoc luu de.
         prev = find_baseline_file()
 
@@ -244,6 +251,10 @@ class EvalRunner:
             raise RunAborted("; ".join(problems))
 
         if not self.dry_run:
+            # Pod do don dep ca truoc tao lai se hien thanh "vua tao lai" trong prompt
+            # cua ca nay neu chua qua 600 giay — nhieu khong thuoc loi dang tiem.
+            if not wait_for_settled_pods(self.k8s, log=self.log):
+                raise CaseAborted("co pod khoi dong lai lien tuc")
             snap = wait_for_clean_baseline(f"eval-{case_id}-truoc",
                                            baseline=self.baseline,
                                            save=False, log=self.log)

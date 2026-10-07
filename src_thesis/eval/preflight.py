@@ -22,6 +22,7 @@ from pathlib import Path
 from src_thesis.faults.injectors import load_active_faults
 from src_thesis.graph.baseline import find_baseline_file, graph_from_dict
 from src_thesis.graph.model import ServiceGraph
+from src_thesis.graph.serialize import INFRA_PODS
 from src_thesis.k8s_client import K8sClient
 from src_thesis.telemetry.snapshot import SystemSnapshot, take_snapshot
 
@@ -30,6 +31,13 @@ from src_thesis.telemetry.snapshot import SystemSnapshot, take_snapshot
 BASELINE_LABEL = "baseline-clean"
 
 TWIN_NAMESPACE = "twin"
+
+# Nguong "vua tao lai" cua prompt: `serialize.describe_pods(recent_restart_s=600)`. Pod
+# tre hon muc nay hien ra trong POD HEALTH nhu mot dau hieu bat thuong.
+RECENT_RESTART_S = 600.0
+# Mot pod tre nhat cung chi can 600 giay de qua nguong. Cho lau hon 15 phut nghia la
+# co pod dang khoi dong lai lien tuc — loi that, khong phai du am.
+SETTLE_PODS_MAX_WAIT_S = 900
 
 
 def _log(msg: str, log=None) -> None:
@@ -110,6 +118,55 @@ def _check_once(k8s: K8sClient | None = None) -> tuple[list[str], list[str]]:
         return problems, []
 
     return problems, [p.name for p in prod if not p.ready]
+
+
+def young_pods(k8s: K8sClient | None = None,
+               min_age_s: float = RECENT_RESTART_S) -> list[tuple[str, float]]:
+    """Pod ứng dụng mới tạo hoặc mới khởi động lại trong `min_age_s` giây: (tên, tuổi)."""
+    k8s = k8s or K8sClient(namespace="default")
+    out = []
+    for p in k8s.list_pods("default"):
+        if p.name.startswith(INFRA_PODS):
+            continue
+        ages = [a for a in (p.age_s, p.last_restart_age_s) if a is not None]
+        if ages and min(ages) <= min_age_s:
+            out.append((p.name, min(ages)))
+    return out
+
+
+def wait_for_settled_pods(
+    k8s: K8sClient | None = None,
+    min_age_s: float = RECENT_RESTART_S,
+    max_wait_s: int = SETTLE_PODS_MAX_WAIT_S,
+    log=None,
+) -> bool:
+    """Chờ tới khi không còn pod nào "vừa tạo lại". False nếu hết `max_wait_s`.
+
+    VÌ SAO CẦN (phiên 20261007-065802, mục 13.5 docs/danh-gia-xai.md): dọn dẹp sau
+    mỗi ca làm Kubernetes tạo lại pod (gỡ biến môi trường, trả CPU, scale về 1). Bộ
+    chạy chỉ chờ pod SẴN SÀNG, nên ca kế tiếp bắt đầu khi pod đó mới vài phút tuổi, và
+    prompt của ca sau ghi nó là "RECREATED" — một dấu hiệu nhiễu không thuộc lỗi đang
+    tiêm. LLM có lúc bám vào nó (E2: S2 chuyển sang checkoutservice / pod_kill).
+
+    Cùng lý do, chờ cả trước khi chụp ảnh nền đầu phiên: pod vừa khởi động có vài lần
+    gọi chậm, đủ đội mức "lúc khỏe" của các cạnh ít lưu lượng (vấn đề 1, mục 13.5).
+    """
+    deadline = time.time() + max_wait_s
+    while True:
+        young = young_pods(k8s, min_age_s)
+        if not young:
+            return True
+        now = time.time()
+        if now >= deadline:
+            _log(f"  het {max_wait_s}s ma van con pod tre: "
+                 f"{', '.join(f'{n} ({a:.0f}s)' for n, a in young[:5])}", log)
+            return False
+        need = max(min_age_s - a for _, a in young) + 5
+        wait = max(5.0, min(need, deadline - now))
+        _log(f"  {len(young)} pod tre hon {min_age_s:.0f}s "
+             f"({', '.join(f'{n} {a:.0f}s' for n, a in young[:3])}), cho {wait:.0f}s "
+             f"de prompt khong ghi chung la 'vua tao lai'...", log)
+        time.sleep(wait)
 
 
 def wait_for_clean_baseline(
