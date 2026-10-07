@@ -30,6 +30,11 @@ gha-creds-*.json
 
 # Khóa luận
 .env
+# Ban sao cua .env do trinh soan thao de lai (nano de .env.save) cung chua khoa
+.env.*
+!.env.example
+# File nano tu luu khi phien sua bi ngat (nano.save, <ten>.save), co the chua khoa
+*.save
 __pycache__/
 data/runs/
 data/llm_cache/
