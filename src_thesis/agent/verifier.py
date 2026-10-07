@@ -312,6 +312,29 @@ class TwinVerifier:
                 deltas=deltas,
             )
 
+        # TI LE LOI QUYET DINH TRUOC, khong qua nguong tong thoi gian cho.
+        #
+        # VI SAO: lan chay that S1 tren k3s ngay 2026-10-07, adjust_resources lam loi
+        # frontend tang 2.9% -> 27.2% ma phan quyet ra no_change. p95 cham tran 30 giay
+        # cua histogram o ca hai lan do, nen tong thoi gian cho doi +0 va nhanh "duoi
+        # 15%" nuot mat. Agent khong tu hoan tac mot hanh dong ro rang co hai.
+        #
+        # Nguong thoi gian cho chi danh cho do tre. Loi da vuot MIN_ERROR_DELTA tren mot
+        # service du luu luong thi da la ket luan: mat don hang nang hon cham don hang.
+        err_degraded = [d for d in voting if d.error_delta >= MIN_ERROR_DELTA]
+        err_improved = [d for d in voting if d.error_delta <= -MIN_ERROR_DELTA]
+
+        def err_note(ds: list[ServiceDelta]) -> str:
+            return ", ".join(f"{d.service} {d.error_before * 100:.1f}% -> "
+                             f"{d.error_after * 100:.1f}%" for d in ds)
+
+        if err_degraded:
+            return Verdict("worse", f"ti le loi tang: {err_note(err_degraded)}",
+                           deltas, improved, degraded)
+        if err_improved:
+            return Verdict("better", f"ti le loi giam: {err_note(err_improved)}",
+                           deltas, improved, degraded)
+
         if degraded and not improved:
             if small:
                 return Verdict(
@@ -331,24 +354,8 @@ class TwinVerifier:
             return Verdict("better", f"tot len o {', '.join(improved)}, {cost_note}",
                            deltas, improved, degraded)
         if improved and degraded:
-            # Vua tot vua xau: quyet dinh theo TI LE LOI, vi lam mat don hang nang
-            # hon lam cham don hang. Chi khi ti le loi khong doi moi xet do tre.
-            err_improved = [d.service for d in deltas
-                            if d.error_delta <= -MIN_ERROR_DELTA]
-            err_degraded = [d.service for d in deltas
-                            if d.error_delta >= MIN_ERROR_DELTA]
-            if err_degraded:
-                return Verdict(
-                    "worse",
-                    f"co cho tot len nhung ti le loi tang o {', '.join(err_degraded)}, "
-                    f"mat don hang nang hon cham don hang",
-                    deltas, improved, degraded)
-            if err_improved:
-                return Verdict(
-                    "better",
-                    f"ti le loi giam o {', '.join(err_improved)}, du co cho cham di",
-                    deltas, improved, degraded)
-            # Vua tot vua xau, ti le loi khong doi -> can theo DO LON.
+            # Vua nhanh len vua cham di, ti le loi khong doi (da xet o tren) -> can
+            # theo DO LON cua tong thoi gian cho.
             if small:
                 return Verdict(
                     "no_change",
