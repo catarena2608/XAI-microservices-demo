@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from src_thesis.eval.replay import rebuild_prompt_text
+from src_thesis.eval.replay import align_edge_order, rebuild_prompt_text
 from src_thesis.graph.diff import (
     ERROR_RATE_THRESHOLD,
     SLOW_ABSOLUTE_MS,
@@ -43,6 +43,12 @@ from src_thesis.graph.serialize import INFRA_PODS, expected_deployments
 #   describe_cpu(ratio_alert=0.7)        -> "<-- AT LIMIT"
 RECENT_RESTART_S = 600.0
 CPU_ALERT_RATIO = 0.7
+
+# Nguong cho cac khang dinh dang chu ve do tre va loi, va cho dau hieu RED cua E2. Lay
+# tu diff.py de "cao" o day trung voi "bat thuong" cua chinh he thong, khong tu dat
+# nguong moi.
+HIGH_LATENCY_MS = SLOW_ABSOLUTE_MS
+HIGH_ERROR_PCT = ERROR_RATE_THRESHOLD * 100
 
 GLOBAL = "*"   # thuc the "ca he thong", vi du thong luong so voi luc khoe
 
@@ -99,7 +105,8 @@ class Signal:
     """
 
     key: str                     # vi du "slow:frontend->productcatalogservice"
-    kind: str                    # slow_edge | error_edge | gone | recreated | cpu_limit
+    kind: str                    # slow_edge | error_edge | missing_edge | gone | recreated
+                                 # | cpu_limit; rieng E2: high_p95 | high_error_rate
     services: tuple[str, ...]    # (nguon, dich) voi canh, (service,) voi service
     detail: str
 
@@ -125,11 +132,18 @@ class FactTable:
     has_cpu_data: bool = False
     cpu_pct: dict[str, float] = field(default_factory=dict)
     p95: dict[str, float] = field(default_factory=dict)
+    # "server" khi service tu phat trace, "client" khi so do tu phia nguoi goi. Ba
+    # service khong phat trace (cartservice, shippingservice, adservice) co p95 la
+    # do tre NGUOI GOI thay — gom ca thoi gian cho cua chinh nguoi goi, nen khong
+    # phai "p95 rieng" cua chung.
+    red_source: dict[str, str] = field(default_factory=dict)
     error_pct: dict[str, float] = field(default_factory=dict)
     replicas: dict[str, int] = field(default_factory=dict)
     ready: dict[str, int] = field(default_factory=dict)
     cpu_limit_cores: dict[str, float] = field(default_factory=dict)
     signals: list[Signal] = field(default_factory=list)
+    # Dau hieu tu so lieu rieng cua service. Chi E2 dung — xem `_red_signals`.
+    red_signals: list[Signal] = field(default_factory=list)
 
     _index: dict = field(default_factory=dict, repr=False)
 
@@ -198,7 +212,9 @@ def build_fact_table(snapshot: dict, prompt_text: str | None = None) -> FactTabl
     `prompt_text` là chuỗi ĐÃ GỬI cho LLM, kể cả phần phản hồi của vòng trước. Không
     truyền thì dựng lại từ snapshot — đúng y chuỗi gốc khi không có phản hồi.
     """
-    snapshot_text = rebuild_prompt_text(snapshot)
+    # Xep canh dung thu tu prompt goc, de phep so `startswith` ben duoi tim dung phan
+    # phan hoi cua vong truoc (xem replay.align_edge_order).
+    snapshot_text = rebuild_prompt_text(align_edge_order(snapshot, prompt_text))
     prompt = prompt_text if prompt_text else snapshot_text
     t = FactTable()
 
@@ -286,6 +302,7 @@ def build_fact_table(snapshot: dict, prompt_text: str | None = None) -> FactTabl
             if p is not None and p == p:
                 t.p95[name] = float(p)
             t.error_pct[name] = (r.get("error_rate") or 0.0) * 100
+            t.red_source[name] = r.get("source", "")
 
     # --- muc CPU USAGE vs LIMIT ---
     cpu_lines = _section_lines(prompt, "CPU USAGE vs LIMIT")
@@ -349,6 +366,7 @@ def build_fact_table(snapshot: dict, prompt_text: str | None = None) -> FactTabl
             t.add(GLOBAL, "feedback", n, "PREVIOUS ATTEMPT")
 
     t.signals = _signals(t)
+    t.red_signals = _red_signals(t)
     return t
 
 
@@ -371,6 +389,7 @@ def build_partial_table(red: dict) -> FactTable:
         if p is not None and p == p:
             t.p95[name] = float(p)
         t.error_pct[name] = (r.get("error_rate") or 0.0) * 100
+        t.red_source[name] = r.get("source", "")
     return t
 
 
@@ -403,7 +422,28 @@ def _signals(t: FactTable) -> list[Signal]:
     return out
 
 
-# Nguong cho cac khang dinh dang chu ve do tre va loi. Lay tu diff.py de "cao" o day
-# trung voi "bat thuong" cua chinh he thong, khong tu dat nguong moi.
-HIGH_LATENCY_MS = SLOW_ABSOLUTE_MS
-HIGH_ERROR_PCT = ERROR_RATE_THRESHOLD * 100
+def _red_signals(t: FactTable) -> list[Signal]:
+    """Số liệu riêng của service vượt ngưỡng: p95 trên 500ms, lỗi trên 5%.
+
+    TÁCH KHỎI `signals` CÓ CHỦ Ý. `signals` là các dấu hiệu prompt ĐÃ ĐÁNH DẤU sẵn
+    (mục DEVIATIONS, "<-- AT LIMIT", pod vừa tạo lại), và độ đầy đủ của E1 đã được
+    định nghĩa và báo cáo trên tập đó — thêm vào sẽ đổi nghĩa các số đã báo.
+
+    Mục SERVICE METRICS thì prompt chỉ in ra, không đánh dấu, nhưng LLM trích nó rất
+    nhiều ("productcatalogservice p95 9750.0ms"). E2 cần tập này: nếu `drop_cited`
+    không sửa những con số đó thì bằng chứng đã trích vẫn nằm nguyên trong prompt, và
+    necessity bị đo thấp hơn thật.
+
+    Ngưỡng là ngưỡng của diff.py (`HIGH_LATENCY_MS`, `HIGH_ERROR_PCT`), cùng phép so
+    "lớn hơn". Chỉ xét service có dòng trong prompt (`t.p95`, `t.error_pct` chỉ chứa
+    dòng `shown`).
+    """
+    out: list[Signal] = []
+    for svc, p95 in sorted(t.p95.items()):
+        if p95 > HIGH_LATENCY_MS:
+            out.append(Signal(f"p95:{svc}", "high_p95", (svc,), f"{svc} p95 {p95:g}ms"))
+    for svc, pct in sorted(t.error_pct.items()):
+        if pct > HIGH_ERROR_PCT:
+            out.append(Signal(f"errors:{svc}", "high_error_rate", (svc,),
+                              f"{svc} loi {pct:.1f}%"))
+    return out

@@ -97,7 +97,8 @@ def find_mentions(text: str, services: set[str]) -> list[Mention]:
 
 # Ranh gioi menh de: chu the cua mot con so khong vuot qua cac tu nay.
 _CLAUSE = re.compile(r"[.;]\s|,\s|\s(?:but|while|whereas|so|because|since|although|"
-                     r"however|which|indicating|confirming|meaning)\s", re.I)
+                     r"however|which|indicating|confirming|meaning|except|"
+                     r"apart from|other than)\s", re.I)
 
 
 def _clause_bounds(text: str, pos: int) -> tuple[int, int]:
@@ -272,7 +273,8 @@ def extract_numbers(text: str, mentions: list[Mention]) -> list[NumberClaim]:
         if unit in ("ms", "millisecond", "milliseconds"):
             kinds = _latency_kinds(before, owner)
         elif unit in ("s", "sec", "secs", "second", "seconds"):
-            if re.match(r"\s*ago", after, re.I):
+            # "332s and 399s ago": chu "ago" dung chung cho ca nhom so.
+            if re.match(r"(?:\s*(?:and|or|,)\s*\d+(?:\.\d+)?\s*s)*\s*ago", after, re.I):
                 kinds, unit = ["age_s", "restart_age_s"], "s ago"
             else:
                 # "6s" la 6000ms: doi ve ms roi kiem nhu do tre.
@@ -316,18 +318,23 @@ def _assign_respectively(text: str, mentions: list[Mention],
     Khong xu ly thi ca hai so deu gan cho thuc the dung gan nhat, va so dung bi bao
     la "dung so sai cho" — dung loai bao sai ma file nay uu tien tranh.
     """
+    spans = []
     m = re.search(r"respectively", text, re.I)
-    if not m or not claims:
-        return
-    group = [c for c in claims if getattr(c, "pos", -1) < m.start()]
-    if len(group) < 2:
-        return
-    first = min(c.pos for c in group)
-    before = [x for x in mentions if x.end <= first]
-    if len(before) < len(group):
-        return
-    for c, x in zip(group, before[-len(group):]):
-        c.owner = x.entity
+    if m:
+        spans.append((0, m.start()))
+    # "frontend and productcatalogservice ... (332s and 399s ago)": nhom so trong
+    # ngoac, khong co chu "respectively" nhung cung mot nghia.
+    spans += [(g.start(), g.end()) for g in re.finditer(r"\([^()]*\)", text)]
+    for a, b in spans:
+        group = [c for c in claims if a <= c.pos < b]
+        if len(group) < 2 or len({c.unit for c in group}) != 1:
+            continue
+        first = min(c.pos for c in group)
+        before = [x for x in mentions if x.end <= first]
+        if len(before) < len(group):
+            continue
+        for c, x in zip(group, before[-len(group):]):
+            c.owner = x.entity
 
 
 # ======================================================================
@@ -574,8 +581,11 @@ def judge_text(c: TextClaim, t: FactTable) -> TextClaim:
             return verdict(ok, "misleading", f"canh {o} co loi")
         if o not in t.error_pct:
             return c
+        # "X's own metrics show no errors" noi ve so do PHIA SERVER cua X, va cau do
+        # dung ca khi nguoi goi nhan loi (service chet thi khong co span server).
+        own = re.search(r"\bown\b|server[- ]side", c.text, re.I)
         ok = (t.error_pct[o] <= HIGH_ERROR_PCT
-              and not any(d == o for _, d in t.error_edges))
+              and (own or not any(d == o for _, d in t.error_edges)))
         return verdict(ok, "misleading", f"{o} co {t.error_pct[o]:.1f}% loi hoac canh loi")
     if c.rule in ("latency_high", "latency_low"):
         if o == GLOBAL:
@@ -696,6 +706,42 @@ def signal_mentioned(sig, sentences: list[tuple[str, list[Mention]]]) -> bool:
     return False
 
 
+# Tu khoa cho dau hieu RED (`facts._red_signals`). Mot con so "...ms" cung tinh la noi
+# ve do tre.
+_RED_WORDS = {
+    "high_p95": re.compile(r"p95|95th|latenc|\bslow|timeout|timed? out|deadline|"
+                           r"\d\s*ms\b", re.I),
+    "high_error_rate": _KW_ERROR,
+}
+
+
+def red_signal_mentioned(sig, sentences: list[tuple[str, list[Mention]]]) -> bool:
+    """Lời giải thích có nói tới p95 / tỉ lệ lỗi RIÊNG của service này không.
+
+    Xét chủ thể của TỪNG từ khóa bằng `owner_of`, giống cách gán chủ cho con số:
+    "frontend -> productcatalogservice: avg 9750ms" có chủ là CẠNH, nên không tính
+    là nói về p95 của productcatalogservice; "productcatalogservice p95 9750.0ms" thì
+    tính.
+
+    "Multiple callers (frontend, checkoutservice, recommendationservice) show slow
+    edges": chủ ngữ là "Multiple callers", không phải service cuối danh sách. Service
+    nằm trong ngoặc đã đóng trước từ khóa thì không được làm chủ của từ khóa đó.
+    """
+    (svc,) = sig.services
+    rx = _RED_WORDS[sig.kind]
+    for text, mentions in sentences:
+        parens = [(g.start(), g.end()) for g in re.finditer(r"\([^()]*\)", text)]
+        for m in rx.finditer(text):
+            pos = m.start()
+            before = [x for x in mentions if x.end <= pos]
+            if before and any(a < before[-1].start and b <= pos for a, b in parens
+                              if before[-1].end <= b):
+                continue
+            if owner_of(text, pos, mentions) == svc:
+                return True
+    return False
+
+
 def _touches(entity: str | None, svc: str) -> bool:
     if not entity or entity == GLOBAL:
         return False
@@ -789,5 +835,12 @@ def check_explanation(explanation: dict, table: FactTable) -> GroundingReport:
             "root_signals": rc_sigs,
             "root_cited_share": (round(len([k for k in rc_sigs if k in cited])
                                        / len(rc_sigs), 4) if rc_sigs else None),
+            # Dau hieu RED: chi E2 dung de chia nhom, KHONG vao cac ti le o tren.
+            "red_signals": [s.key for s in table.red_signals],
+            "red_cited": [s.key for s in table.red_signals
+                          if red_signal_mentioned(s, sentences["evidence"])],
+            "red_mentioned": [s.key for s in table.red_signals
+                              if red_signal_mentioned(s, sentences["evidence"]
+                                                      + sentences["reasoning"])],
         }
     return rep

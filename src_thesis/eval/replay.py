@@ -14,7 +14,9 @@ lệch nhau ngay lần sửa đầu tiên.
 
 from __future__ import annotations
 
+import copy
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -90,6 +92,45 @@ def rebuild_prompt_text(snapshot_dict: dict, include_topology: bool = True) -> s
     if include_topology:
         parts = [serialize.describe_topology(topo), ""] + parts
     return "\n".join(parts)
+
+
+_GRAPH_LINE = re.compile(r"^  (\S+) -> (\S+): \d+ calls,")
+
+
+def align_edge_order(snapshot_dict: dict, prompt_text: str | None) -> dict:
+    """Bản sao snapshot với các cạnh xếp đúng thứ tự đã in trong prompt gốc.
+
+    `ServiceGraph.to_dict` lưu cạnh theo thứ tự TÊN, còn prompt in cạnh theo số lần
+    gọi giảm dần, và các cạnh bằng số lần gọi giữ thứ tự gặp span. Thứ tự đó mất khi
+    lưu, nên dựng lại thì các cạnh "hòa" bị đảo: cùng nội dung, khác thứ tự dòng. Phát
+    hiện 2026-10-07 khi so prompt dựng lại với `prompt_text` đã lưu: lệch ở cả 8 ca lỗi
+    thật.
+
+    Đọc thứ tự trong mục OBSERVED CALL GRAPH của chính prompt gốc rồi xếp lại. Cạnh
+    không có trong prompt (quá 40 dòng) giữ thứ tự cũ, đứng sau.
+    """
+    if not prompt_text:
+        return snapshot_dict
+    order: list[tuple[str, str]] = []
+    inside = False
+    for line in prompt_text.splitlines():
+        if line.startswith("OBSERVED CALL GRAPH"):
+            inside = True
+            continue
+        if inside:
+            if not line.strip():
+                break
+            m = _GRAPH_LINE.match(line)
+            if m:
+                order.append((m.group(1), m.group(2)))
+    if not order:
+        return snapshot_dict
+    rank = {e: i for i, e in enumerate(order)}
+    snap = copy.deepcopy(snapshot_dict)
+    edges = (snap.get("runtime_graph") or {}).get("edges")
+    if edges:
+        edges.sort(key=lambda e: rank.get((e.get("source"), e.get("target")), len(rank)))
+    return snap
 
 
 def load_cases(runs_dir: Path = RUNS_DIR) -> list[dict]:

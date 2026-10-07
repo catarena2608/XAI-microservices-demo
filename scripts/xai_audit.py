@@ -56,6 +56,11 @@ from src_thesis.eval.rule_baseline import diagnose_by_rules
 from src_thesis.eval.xai_cases import correctness, load_cases
 
 OUT_DIR = Path(__file__).resolve().parents[1] / "data" / "xai_audit"
+# Snapshot KHOE tren k3s, dung cluster voi phien 20261007-065802. E2 lay p95 / ti le loi
+# luc khoe cua tung service tu day. data/runs/ nam ngoai git: may khac khong co file
+# nay thi E2 dung HEALTHY_FALLBACK va bao ro.
+HEALTHY_SNAPSHOT = (Path(__file__).resolve().parents[1] / "data" / "runs"
+                    / "20261006-234811_smoke-k3s-moi.json")
 
 
 def _save(kind: str, payload: dict) -> Path:
@@ -126,8 +131,10 @@ def trust_rows(rows: list[dict], key, label: str) -> list[str]:
     for g in sorted(groups, key=lambda x: str(x)):
         rs = groups[g]
         root = sum(r["correct"]["root_correct"] for r in rs)
+        fault = sum(r["correct"]["fault_correct"] for r in rs)
         act = sum(r["correct"]["action_correct"] for r in rs)
         lines.append(f"    {str(g):<22} n={len(rs):<4} root dung {_frac(root, len(rs)):<14} "
+                     f"loai loi dung {_frac(fault, len(rs)):<14} "
                      f"hanh dong dung {_frac(act, len(rs))}")
     return lines
 
@@ -305,6 +312,7 @@ def cmd_rules(args) -> int:
         if llm:
             print(f"LLM tren CUNG cac snapshot do ({len(llm)} lan chan doan):")
             print(f"  root cause dung : {_frac(sum(x['root_correct'] for x in llm), len(llm))}")
+            print(f"  loai loi dung   : {_frac(sum(x['fault_correct'] for x in llm), len(llm))}")
             print(f"  hanh dong dung  : {_frac(sum(x['action_correct'] for x in llm), len(llm))}")
     print(f"\nTu kiem bo cham E1 tren loi giai thich cua luat: "
           f"{'DAT' if not self_check_bad else f'{self_check_bad} ca KHONG dat 2/2 — xem lai grounding.py'}")
@@ -338,6 +346,20 @@ def _show_plan(case: dict, plan: dict) -> None:
             print(f"      ... them {len(changed) - 14} dong")
 
 
+def _healthy_red(path: str) -> dict:
+    try:
+        d = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"CANH BAO: khong doc duoc anh khoe {path} ({e}). So RED se ve "
+              f"HEALTHY_FALLBACK {CF.HEALTHY_FALLBACK['service_p95_ms']:g}ms / 0% loi.")
+        return {}
+    if d.get("diff") and any((d["diff"].get(k) or [])
+                             for k in ("slow_edges", "error_edges", "missing_edges")):
+        print(f"CANH BAO: anh khoe {path} co lech so voi thiet ke — kiem lai truoc khi dung.")
+    print(f"anh khoe tham chieu cho so RED: {Path(path).name} ({d.get('taken_at_human', '?')})")
+    return d.get("red") or {}
+
+
 def cmd_counterfactual(args) -> int:
     cases = [c for c in load_cases(_paths(args)) if c.get("snapshot")]
     if not cases:
@@ -347,8 +369,14 @@ def cmd_counterfactual(args) -> int:
     if args.max_cases:
         cases = cases[:args.max_cases]
 
+    healthy_red = _healthy_red(args.healthy)
     plans = [CF.plan_case(c["snapshot"], c["explanation"], c.get("prompt_text"),
-                          args.per_signal) for c in cases]
+                          args.per_signal, healthy_red) for c in cases]
+    inexact = [c["id"] for c, p in zip(cases, plans) if p["replay_exact"] is False]
+    if inexact:
+        print(f"CANH BAO: {len(inexact)} ca dung lai prompt KHONG giong tung ky tu prompt "
+              f"da gui: {', '.join(inexact)}. Bien the drop_* se khac prompt goc them "
+              f"mot cho ngoai phan da sua.")
     n_calls = sum(len(p["variants"]) for p in plans) * args.repeats
     chars = sum(len(v["prompt"]) for p in plans for v in p["variants"]) * args.repeats
     print(f"{len(cases)} ca, {n_calls} lan goi LLM ({args.repeats} lan moi bien the), "
@@ -371,17 +399,36 @@ def cmd_counterfactual(args) -> int:
         print(f"CANH BAO: loi giai thich goc sinh boi {sorted(models)}, dang chay bang "
               f"{reasoner.model}. Doi ket qua co the do doi model.")
 
+    def cost(rs: list[dict]) -> tuple[int, int, float]:
+        tin = sum(x.get("input_tokens") or 0 for r in rs for v in r["variants"]
+                  for x in v["calls"])
+        tout = sum(x.get("output_tokens") or 0 for r in rs for v in r["variants"]
+                   for x in v["calls"])
+        p = reasoner.provider
+        return tin, tout, (tin * p.input_price + tout * p.output_price) / 1_000_000
+
     results = []
-    for c in cases:
-        print(f"\n=== {c['id']}")
+    out = None
+    meta = {"model": reasoner.model, "repeats": args.repeats,
+            "healthy_reference": args.healthy if healthy_red else None}
+    for i, c in enumerate(cases, 1):
+        print(f"\n=== [{i}/{len(cases)}] {c['id']}")
         r = CF.run_case(reasoner, c["snapshot"], c["explanation"], c.get("prompt_text"),
-                        repeats=args.repeats, per_signal=args.per_signal)
+                        repeats=args.repeats, per_signal=args.per_signal,
+                        healthy_red=healthy_red)
         r["id"] = c["id"]
         r["correct"] = correctness(c)
         results.append(r)
         print(f"  necessity {r['necessity']}  sufficiency_violation "
               f"{r['sufficiency_violation']}  gap {r['faithfulness_gap']}  "
-              f"(nhieu nen {r['noise_floor']})")
+              f"(nhieu nen {r['noise_floor']})  | da ton {cost(results)[2]:.4f} USD")
+        # Ghi dan sau moi ca: dut mang giua chung thi cac ca da tra tien van con.
+        payload = {**meta, "partial": i < len(cases), "cases": results}
+        if out is None:
+            out = _save("counterfactual", payload)
+        else:
+            out.write_text(json.dumps(payload, indent=2, ensure_ascii=False),
+                           encoding="utf-8")
 
     summary = CF.summarize(results)
     print("\n" + "=" * 72)
@@ -392,11 +439,24 @@ def cmd_counterfactual(args) -> int:
     print(f"  necessity             : {summary['necessity']}   (cao la tot)")
     print(f"  sufficiency_violation : {summary['sufficiency_violation']}   (gan 0 la tot)")
     print(f"  faithfulness_gap      : {summary['faithfulness_gap']}   (cao la tot)")
+    dx = summary["diagnosis"]
+    print("  phu — tinh ca loai loi (root HOAC fault_type doi):")
+    for name, rate in dx["flip"].items():
+        print(f"    {name:<14} {rate}")
+    print(f"    necessity {dx['necessity']}  sufficiency_violation "
+          f"{dx['sufficiency_violation']}  faithfulness_gap {dx['faithfulness_gap']}")
     print(f"  ca khong trich dau hieu nao   : {summary['cases_without_cited_signal']}")
     print(f"  ca khong co dau hieu bi bo qua: {summary['cases_without_uncited_signal']}")
-    out = _save("counterfactual", {"model": reasoner.model, "repeats": args.repeats,
-                                   "summary": summary, "cases": results})
-    print(f"\nda ghi: {out}")
+    tin, tout, usd = cost(results)
+    failed = sum(1 for r in results for v in r["variants"] for x in v["calls"]
+                 if x.get("root") is None)
+    print(f"  lan goi hong (khong ra loi giai thich) : {failed}")
+    print(f"\nchi phi that: {tin} token vao, {tout} token ra, {usd:.4f} USD")
+    payload = {**meta, "partial": False, "summary": summary,
+               "usage": {"input_tokens": tin, "output_tokens": tout, "usd": round(usd, 5)},
+               "cases": results}
+    out.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"da ghi: {out}")
     return 0
 
 
@@ -422,6 +482,8 @@ def main() -> int:
     p.add_argument("--provider", default="openai", choices=["openai", "groq"])
     p.add_argument("--model", default=None)
     p.add_argument("--dry-run", action="store_true", help="chi in se sua gi, khong goi API")
+    p.add_argument("--healthy", default=str(HEALTHY_SNAPSHOT),
+                   help="snapshot khoe de lay p95 / ti le loi luc khoe cua tung service")
 
     args = ap.parse_args()
     return {"check": cmd_check, "rules": cmd_rules,

@@ -108,7 +108,9 @@ def _latency_or_resource(t: FactTable, root: str) -> tuple[str, str]:
         return "resource_exhaustion", f"{root} is at {pct:.0f}% of its CPU limit"
     callers = [f.value for s, d in t.slow_edges if d == root
                for f in t.get(f"{s}->{d}", ["avg_ms"])]
-    own = t.p95.get(root)
+    # Service khong phat trace thi "p95" cua no la so nguoi goi do, khong phai p95
+    # rieng — so voi do tre nguoi goi thay la tu so voi chinh no.
+    own = t.p95.get(root) if t.red_source.get(root) == "server" else None
     if own is not None and callers:
         if own >= 0.5 * min(callers):
             return "latency", (f"{root}'s own p95 {own:g}ms is as high as what its "
@@ -193,8 +195,13 @@ def diagnose_by_rules(snapshot: dict) -> dict:
     for s, d in t.slow_edges:
         callees.setdefault(s, set()).add(d)
     for caller, cs in sorted(callees.items(), key=lambda kv: -len(kv[1])):
-        fast = [d for d in cs if t.p95.get(d, 0.0) < SLOW_ABSOLUTE_MS]
-        if len(cs) >= RADIATING_MIN_CALLEES and len(fast) == len(cs):
+        # "callees keep low p95 OF THEIR OWN": chi xet dich tu phat trace. Dich do
+        # tu phia nguoi goi (cartservice...) mang ca do tre cua chinh nguoi goi dang
+        # nghet, nen khong noi duoc gi ve ban than dich. Sua 2026-10-07: ban dau xet
+        # ca nhung dich nay va bo sot frontend nghet CPU o mot ca S4 that.
+        own = [d for d in cs if t.red_source.get(d) == "server"]
+        slow_own = [d for d in own if t.p95.get(d, 0.0) >= SLOW_ABSOLUTE_MS]
+        if len(cs) >= RADIATING_MIN_CALLEES and own and not slow_own:
             steps.append(f"{caller} is slow toward {len(cs)} distinct callees while "
                          f"those callees keep low p95 of their own.")
             evidence += [_fmt_slow(t, caller, d) for d in sorted(cs)]
@@ -226,7 +233,12 @@ def diagnose_by_rules(snapshot: dict) -> dict:
         return done(root, fault, 0.8, "converging slow edges")
 
     # R5. Pod vua tao lai, khong co trieu chung manh nao khac -> pod_kill, khong lam gi
-    if t.recreated and not t.error_edges:
+    # "No other strong symptom": khong canh loi, khong service nao cham tran CPU
+    # (prompt tu danh dau "AT LIMIT"), toi da mot canh cham cham vao chinh service
+    # do. Sua 2026-10-07: ban dau khong xet CPU, va goi mot ca S5 that — CPU 73%
+    # tran — la pod_kill.
+    strong = t.error_edges or t.gone or any(s.kind == "cpu_limit" for s in t.signals)
+    if t.recreated and not strong:
         svc = sorted(t.recreated)[0]
         touching = [e for e in t.slow_edges if svc in e]
         if len(t.slow_edges) <= 1 and len(touching) == len(t.slow_edges):
