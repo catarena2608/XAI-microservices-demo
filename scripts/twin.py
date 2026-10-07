@@ -60,7 +60,11 @@ def cmd_create(tm: TwinManager) -> int:
 
 
 def cmd_load_state(tm: TwinManager) -> int:
-    applied = tm.load_state()
+    try:
+        applied = tm.load_state()
+    except RuntimeError as e:
+        print(f"LOI: {e}")
+        return 1
     if not applied:
         print("twin da khop voi production, khong phai doi gi.")
         return 0

@@ -230,7 +230,9 @@ class TwinManager:
         — twin thiếu adservice và recommendationservice nên phải bỏ qua chúng, nếu
         không thì lỗi 404 giữa chừng và twin nạp trạng thái nửa vời.
 
-        Trả về bảng những gì đã đổi, để ghi vào log thí nghiệm.
+        Trả về bảng những gì đã đổi, để ghi vào log thí nghiệm. Ném `RuntimeError`
+        nếu twin không chạy được cấu hình mới trong 180 giây — khi đó twin không còn
+        là bản sao của production, và không được dùng để phán quyết.
         """
         applied: dict[str, dict] = {}
         twin_deps = set(self.k8s.list_deployments(self.namespace))
@@ -265,6 +267,24 @@ class TwinManager:
 
             if change:
                 applied[dep] = change
+
+        # CHO TWIN CHAY CAU HINH MOI THAT, khong chi ghi xong cau hinh.
+        #
+        # VI SAO: lan chay that S1 tren k3s (2026-10-07), twin chep tran CPU 500m cua
+        # production nhung node da het cho, pod moi treo Pending, va pod CU van chay cau
+        # hinh cu. Ham nay van tra ve "da nap", twin do va phan quyet tren mot ban sao
+        # SAI ma khong ai biet. Twin khong giong production thi phep thu tren no vo nghia.
+        stuck = []
+        for dep in applied:
+            if not self.k8s.wait_ready(dep, timeout=180, namespace=self.namespace):
+                phases = sorted({p.phase for p in self.k8s.list_pods(self.namespace)
+                                 if p.deployment == dep and not p.ready})
+                stuck.append(f"{dep} ({', '.join(phases) or 'chua san sang'})")
+        if stuck:
+            raise RuntimeError(
+                f"twin khong nap duoc trang thai production: {'; '.join(stuck)} chua "
+                f"chay cau hinh moi sau 180s. Pending thuong la node het CPU, kiem tra: "
+                f"kubectl describe pod -n {self.namespace}")
 
         return applied
 

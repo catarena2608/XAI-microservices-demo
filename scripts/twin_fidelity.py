@@ -238,12 +238,14 @@ def main() -> int:
     print("  dung twin...", flush=True)
     st = tm.create_twin()
     print(f"  {st.describe()}", flush=True)
-    tm.load_state()
 
     twin_verifier = TwinVerifier(prom=prom, namespace="twin")
     twin_runner = Runner("twin", twin_verifier)
 
     try:
+        # Nam TRONG try: load_state nem loi khi twin khong chay duoc cau hinh moi, va
+        # twin van phai bi xoa o finally ben duoi.
+        tm.load_state()
         # Bo sinh tai chay TRONG namespace twin nen tu chay lien tuc, khong phai
         # bom tay qua port-forward nua. Chi phai cho no am len du mot cua so quan
         # sat truoc khi do lan dau, neu khong thi so lieu con lan luc twin chua co
