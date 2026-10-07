@@ -34,3 +34,9 @@ __pycache__/
 data/runs/
 data/llm_cache/
 
+
+# Cau hinh Claude Code rieng tren may nay, khong dua len git
+.claude/
+
+# Ban nhap bao cao, khong dua len git
+docs/baocaotiendo.tex
