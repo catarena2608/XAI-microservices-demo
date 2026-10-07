@@ -47,7 +47,7 @@ from __future__ import annotations
 import time
 from dataclasses import asdict, dataclass, field
 
-from src_thesis.k8s_client import K8sClient
+from src_thesis.k8s_client import K8sClient, cpu_to_millicores
 from src_thesis.xai.schema import ProposedAction
 
 RISK_OF_ACTION: dict[str, str] = {
@@ -76,31 +76,6 @@ ROLLBACK_ENV_KEYS = ("EXTRA_LATENCY",)
 MAX_REPLICAS = 4          # tran an toan, tranh agent scale vo han
 MIN_REPLICAS = 1
 DEFAULT_CPU_LIMIT = "200m"
-
-
-def cpu_to_millicores(value: str | None) -> float | None:
-    """Doi mot luong CPU cua Kubernetes ve millicore de SO SANH DUOC.
-
-    VI SAO CAN: Kubernetes CHUAN HOA lai luong CPU khi luu. Yeu cau "0.4" thi doc
-    lai duoc "400m" — cung mot gia tri, khac cach viet. So chuoi thang thi ket luan
-    sai rang hanh dong that bai, trong khi no da thanh cong.
-
-    Do thay o ca kiem thu S1 che do direct: tran CPU doi tu 200m len 400m dung y
-    muon, nhung `verified` ra False vi "400m" != "0.4". Day la loi NGUOC voi lop loi
-    thuong gap trong project nay — he thong bao that bai trong khi da thanh cong —
-    nhung cung mot goc re: so sanh ma khong tinh den cach bieu dien.
-    """
-    if value is None:
-        return None
-    v = str(value).strip()
-    if not v:
-        return None
-    try:
-        if v.endswith("m"):
-            return float(v[:-1])
-        return float(v) * 1000.0
-    except ValueError:
-        return None
 
 
 @dataclass

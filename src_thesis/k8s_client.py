@@ -20,6 +20,31 @@ from kubernetes.client.rest import ApiException
 DEFAULT_NAMESPACE = "default"
 
 
+def cpu_to_millicores(value: str | None) -> float | None:
+    """Doi mot luong CPU cua Kubernetes ve millicore de SO SANH DUOC.
+
+    VI SAO CAN: Kubernetes CHUAN HOA lai luong CPU khi luu. Yeu cau "0.4" thi doc
+    lai duoc "400m" — cung mot gia tri, khac cach viet. So chuoi thang thi ket luan
+    sai rang hanh dong that bai, trong khi no da thanh cong.
+
+    Do thay o ca kiem thu S1 che do direct: tran CPU doi tu 200m len 400m dung y
+    muon, nhung `verified` ra False vi "400m" != "0.4". Day la loi NGUOC voi lop loi
+    thuong gap trong project nay — he thong bao that bai trong khi da thanh cong —
+    nhung cung mot goc re: so sanh ma khong tinh den cach bieu dien.
+    """
+    if value is None:
+        return None
+    v = str(value).strip()
+    if not v:
+        return None
+    try:
+        if v.endswith("m"):
+            return float(v[:-1])
+        return float(v) * 1000.0
+    except ValueError:
+        return None
+
+
 def _rollout_done(d: Any) -> bool:
     """Rollout của deployment đã xong hẳn chưa. Cùng điều kiện với `kubectl rollout status`.
 
@@ -292,15 +317,26 @@ class K8sClient:
 
         Vá cả hai trong CÙNG một request, vì vá riêng lẻ cũng vi phạm ràng buộc ở
         bước trung gian.
+
+        NHƯNG chỉ hạ lượng xin trước khi nó lớn hơn trần mới. Tăng trần thì GIỮ NGUYÊN
+        lượng xin trước. Bản cũ luôn đặt hai giá trị bằng nhau, và lần chạy thật S1
+        trên k3s (2026-10-07) cho thấy hậu quả: agent nâng trần productcatalogservice
+        lên 500m thì lượng xin trước cũng thành 500m, production cộng twin xin trước
+        3990m trên node 4 lõi, pod mới của twin treo Pending, và twin chặn
+        `restart_pod` vì "1/2 pod sẵn sàng" — tức là vì máy hết chỗ chứ không phải vì
+        hành động có hại.
         """
         ns = namespace or self.namespace
         c = self._container(deployment, ns, container)
         old_limit = (c.resources.limits or {}).get("cpu") if c.resources else None
         old_request = (c.resources.requests or {}).get("cpu") if c.resources else None
+        resources: dict = {"limits": {"cpu": cpu}}
+        req_m, new_m = cpu_to_millicores(old_request), cpu_to_millicores(cpu)
+        if req_m is None or new_m is None or req_m > new_m:
+            resources["requests"] = {"cpu": cpu}
         patch = {
             "spec": {"template": {"spec": {"containers": [
-                {"name": c.name,
-                 "resources": {"limits": {"cpu": cpu}, "requests": {"cpu": cpu}}}
+                {"name": c.name, "resources": resources}
             ]}}}
         }
         self.apps.patch_namespaced_deployment(deployment, ns, patch)
