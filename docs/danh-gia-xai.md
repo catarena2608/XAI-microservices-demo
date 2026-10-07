@@ -30,8 +30,9 @@ Kèm thêm **bộ chẩn đoán bằng luật** (`rule_baseline.py`) làm mốc 
 | 2 | Bảng sự kiện dùng chung (`facts.py`) | Xong | Snapshot k3s thật: 247 sự kiện, 168 cái có trong prompt |
 | 3 | B — E1 (`grounding.py`) | Xong | 14 câu biết trước đáp án và 4 điều kiện tiên quyết, trên snapshot thật: đúng hết. Chạy trên 1996 câu thật của phase 3 |
 | 4 | C — kiểm nhất quán (`consistency.py`) | Xong | 164 lời giải thích thật. Cả 12 câu bị cờ "tự bác bỏ hành động" đều đã đọc tay, đều đúng |
-| 5 | E — bộ chẩn đoán bằng luật (`rule_baseline.py`) | Code xong | Mới chạy được trên snapshot khỏe mạnh. **Chưa có snapshot lỗi để chạy** |
-| 6 | D — E2 phản thực (`counterfactual.py`) | Code xong | **Chưa chạy**: cần snapshot lỗi, và lệnh này gọi API |
+| 5 | E — bộ chẩn đoán bằng luật (`rule_baseline.py`) | Xong | Đã chạy trên 8 ca lỗi thật, xem mục 13 |
+| 6 | D — E2 phản thực (`counterfactual.py`) | Đã chạy bản cũ, chờ chạy bản đã sửa | Bản cũ (trước mục 13.6–13.7) đã chạy thật trên k3s: mục 13.8. Kết quả chưa sạch, chưa dùng làm số báo cáo. Bản đã sửa chưa chạy: khoảng 0,17 USD, chờ bạn đồng ý |
+| 8 | Lần chạy đầu trên ca lỗi thật (phiên `20261007-065802`) | Xong | Mục 13: E1, C, luật, bản xem trước E2, cùng 5 lỗi của bộ chấm và của luật đã sửa, 2 vấn đề chất lượng dữ liệu |
 | 7 | Script `scripts/xai_audit.py` cùng bộ nạp `xai_cases.py` | Xong | Chạy được trên toàn bộ dữ liệu thật đang có |
 
 **Kết quả đầu tiên đáng chú ý.** Xem chi tiết và các giới hạn ở mục 9.
@@ -161,6 +162,11 @@ bằng cách dò đúng dòng tương ứng trong prompt. Không chép lại lu�
 
 Đây là "vũ trụ" chung cho độ đầy đủ của E1 và cho cách chia nhóm của E2. Nó được định
 nghĩa từ snapshot, không từ lời giải thích.
+
+Riêng E2 dùng thêm một tập thứ hai, `red_signals`: service có p95 trên 500 ms hoặc lỗi
+trên 5% trong mục SERVICE METRICS. Tập này thêm vào ngày 7/10, sau khi bản xem trước
+cho thấy thiếu nó thì E2 đo sai (mục 13.6). Độ đầy đủ của E1 **không** dùng tập này,
+để các số đã báo giữ nguyên nghĩa.
 
 Hai ngưỡng lấy đúng giá trị mặc định của `serialize.py`: 600 giây cho "vừa tạo lại" và
 0.7 cho "AT LIMIT". Nhờ vậy "bất thường" ở đây trùng với cái prompt đã đánh dấu cho LLM,
@@ -426,6 +432,8 @@ vào nhóm nào. Nó vừa không "được trích", vừa không "bị giấu".
   số chính.
 - Đếm riêng các ca không trích dấu hiệu nào, và các ca không có dấu hiệu bị bỏ qua: hai
   loại ca này không kiểm được một trong hai chiều.
+- Chỉ số **phụ** `diagnosis` (thêm 7/10, **trước** lần chạy thật đầu tiên): cùng ba con
+  số trên nhưng tính "root **hoặc** loại lỗi đổi". Lý do ở mục 13.7.
 
 **Vì sao phải so hai nhóm, không chỉ đo `drop_cited`.** Bằng chứng được trích thường là
 tín hiệu mạnh nhất. Bỏ tín hiệu mạnh nhất thì bộ chẩn đoán nào cũng đổi, trung thực hay
@@ -442,6 +450,8 @@ không. Phải thấy thêm rằng bỏ thứ **không** trích thì **không** 
 | Deployment không còn pod | Thêm một pod đang chạy, tuổi 1 ngày |
 | Pod vừa tạo lại | Tuổi pod thành 1 ngày |
 | Chạm trần CPU | CPU về 10% trần |
+| p95 của service trên 500 ms (thêm 7/10) | p95 lấy từ snapshot **khỏe** chụp trên cùng cluster (`--healthy`, mặc định smoke k3s 6/10). Không có thì 50 ms (`HEALTHY_FALLBACK`) |
+| Lỗi của service trên 5% (thêm 7/10) | Tỉ lệ lỗi lấy từ cùng snapshot khỏe đó (đều 0%) |
 
 Sửa trên **snapshot** rồi dựng lại prompt bằng `rebuild_prompt_text`, không sửa chuỗi văn
 bản. Sửa chuỗi thì phần DEVIATIONS và phần OBSERVED CALL GRAPH dễ lệch nhau, và LLM sẽ
@@ -451,8 +461,9 @@ phản ứng với sự mâu thuẫn chứ không phải với dữ liệu mới
 **Bắt buộc tắt cache.** Cache trả lại y nguyên kết quả cũ, khi đó nhóm `repeat` luôn ra
 0%. `run_case` từ chối chạy nếu reasoner còn bật cache.
 
-**Kiểm chứng tới đâu.** **Chưa chạy**: không có snapshot lỗi. Đã kiểm compile, import,
-và đường "không có dữ liệu" của lệnh (báo rõ thiếu gì, mã thoát 1).
+**Kiểm chứng tới đâu.** Lúc viết mục này chưa chạy được vì không có snapshot lỗi. Đã
+kiểm compile, import, và đường "không có dữ liệu" của lệnh (báo rõ thiếu gì, mã thoát
+1). Bản xem trước trên ca lỗi thật: mục 13.5 và 13.6.
 
 ---
 
@@ -612,3 +623,418 @@ Bốn file theo cùng chiều. Một file ngược chiều (3/3 so với 25/27).
 - `src_thesis/eval/xai_cases.py`: nạp ca từ ba nguồn.
 - `scripts/xai_audit.py`: lệnh `check`, `rules`, `counterfactual`.
 - `docs/danh-gia-xai.md`: file này.
+
+---
+
+## 13. Lần chạy đầu trên ca lỗi thật (2026-10-07, phiên `20261007-065802`)
+
+### 13.1. Thu dữ liệu
+
+- Lệnh `eval_run.py --modes xai_only --scenarios S1,S2,S3,S4,S5 --repeats 2` trên k3s.
+  Xong **10/10 ca** trong 66 phút (06:58–08:04), nhanh hơn ước tính 2,5 giờ.
+- Chi phí thật: **0,00211 USD mỗi ca**, trung bình 3920 token mỗi ca.
+- Có hai lần khởi động hỏng, mỗi lần để lại một thư mục rỗng. Đã xóa.
+- **Chuyển về WSL** qua một ConfigMap tạm trên cluster, vì máy k3s không push được
+  (GitHub đòi PAT). 11 file về đủ, kích thước khớp từng byte với danh sách trên máy
+  k3s. Sau đó đã xóa ConfigMap và đóng tunnel.
+- **Bước A chạy đúng trên cluster thật:** mỗi file ca có `snapshot` và `prompt_text`.
+  File nặng 30–42 KB.
+- Hai ca S3 không có chẩn đoán. Lúc agent quan sát, Kubernetes đã tạo lại pod xong, diff
+  sạch, nên agent coi hệ thống khỏe và không gọi LLM. Đó là hành vi đúng của agent.
+  Vì vậy còn **8 lời giải thích**.
+
+### 13.2. E1
+
+**Lần chạy đầu bị gắn cờ sai 3 khẳng định.** Đọc lại câu gốc thì cả 3 đều do bộ chấm,
+không phải do LLM. Đã sửa:
+
+| Câu gốc | Bộ chấm làm sai gì | Sửa |
+|---|---|---|
+| *"currencyservice's **own** metrics show 0.00 req/s and no errors, consistent with no pods running"* | Báo "gây hiểu nhầm" vì người gọi nhận lỗi khi gọi tới currencyservice. Nhưng câu này nói đúng về số đo phía server của chính nó | Câu có "own" hoặc "server-side" thì chỉ xét tỉ lệ lỗi riêng của service |
+| *"frontend and productcatalogservice … (332s and 399s ago)"* | Chữ "ago" dùng chung cho hai số; bộ tách đọc "332s" thành 332000 ms | Nhận dạng "Ns and Ms ago". Nhóm số trong ngoặc được gán lần lượt cho các thực thể đứng trước, như với "respectively" |
+| *"…low p95 latencies and 0.0% errors **except** adservice…"* | Gán "0.0% errors" cho adservice | "except", "apart from", "other than" là ranh giới mệnh đề |
+
+**Sau khi sửa:**
+- **165/165 con số khớp**, 8/8 lời giải thích đạt soundness 2.
+- 23/23 điều kiện tiên quyết đúng.
+- Khẳng định dạng chữ: 42 đúng, 19 không kiểm được (đa số không rõ chủ thể).
+- Độ đầy đủ: trung bình 79% dấu hiệu bất thường được trích, 94% với riêng dấu hiệu của
+  nguyên nhân gốc.
+
+**Kiểm lại để chắc điểm tuyệt đối không phải do bộ chấm quá dễ dãi:**
+- Bộ câu biết trước đáp án ở mục 4.4 vẫn ra đúng 14/14 câu và 4/4 điều kiện.
+- Đọc mẫu 18 con số "khớp": cả 18 khớp đúng cạnh hoặc service, đúng loại số, đúng mục
+  của prompt.
+
+**Nhận xét.** gpt-4.1-mini chép số liệu rất trung thành. Trên bộ dữ liệu này E1 gần như
+không lọc ra được lời giải thích nào. Giá trị của E1 ở đây là **bằng chứng truy ngược
+được**: mỗi con số chỉ được tới tận dòng trong snapshot. Nó không đóng vai bộ lọc.
+
+### 13.3. C, lần đầu trên dữ liệu chưa từng dùng để chỉnh luật
+
+**3/8 không nhất quán: S1 lần 1, S1 lần 2, S5 lần 2.** Đọc tay cả 3 câu: đều đúng.
+
+- S1 lần 1: *"CPU usage of productcatalogservice is low (1% of limit), so resource
+  exhaustion is unlikely."*, rồi chọn `adjust_resources`.
+- S1 lần 2: *"…slow processing requests, not resource exhaustion."*, rồi chọn
+  `adjust_resources`.
+- **S5 lần 2:**
+  - LLM viết: *"CPU usage of productcatalogservice is 69% of its 0.01 core limit, which
+    is moderate and does not indicate resource exhaustion."*
+  - Nên chẩn đoán **sai loại lỗi** (latency thay vì resource_exhaustion), rồi vẫn chọn
+    tăng CPU.
+  - Hành động trúng đáp án là **do may**.
+  - CPU 69% nằm sát ngưỡng 70%. Ghi chú của kịch bản S5 trong `scenarios.yaml` đã cảnh
+    báo đúng chỗ này từ trước.
+
+| Tách theo C | n | Root đúng | Loại lỗi đúng | Hành động đúng |
+|---|---|---|---|---|
+| Không nhất quán | 3 | 3/3 | **2/3** | 3/3 |
+| Nhất quán | 5 | 5/5 | **5/5** | 5/5 |
+| Confidence ≥ 0.9 (cả 8 ca) | 8 | 8/8 | 7/8 | 8/8 |
+
+Ca sai loại lỗi duy nhất nằm trong nhóm bị C gắn cờ. Confidence của nó vẫn ≥ 0.9 như mọi
+ca khác. Mẫu chỉ có 8 ca, nên đây là **ví dụ minh họa**, chưa phải kết quả thống kê.
+
+### 13.4. Bộ luật
+
+**Lần chạy đầu: root đúng 7/8, loại lỗi 5/8, hành động 5/8.** Hai chỗ sai là do
+**mình cài luật lệch với câu chữ của prompt**. Đã sửa:
+
+| Ca | Sai thế nào | Prompt nói gì | Sửa |
+|---|---|---|---|
+| S4 lần 1 | Luật "một nơi gọi chậm tới nhiều đích mà đích vẫn nhanh" không khớp, vì cartservice có p95 591 ms | p95 của cartservice, shippingservice, adservice đo **từ phía người gọi**, không phải số riêng của chúng | Chỉ xét những đích tự phát trace. Với đích không tự phát trace, p95 không được coi là "p95 riêng" |
+| S5 lần 1 | Bị chẩn đoán là pod_kill, trong khi CPU đang 73% trần | pod_kill chỉ khi "no other strong symptom"; `AT LIMIT` do chính prompt đánh dấu | Cạnh lỗi, hết pod hay chạm trần CPU đều tính là triệu chứng mạnh |
+
+**Sau khi sửa: luật 8/8, 7/8, 7/8. LLM 8/8, 7/8, 8/8.**
+- Ca luật sai là S5 lần 2: CPU 69%, dưới ngưỡng. Đây là **giới hạn thật** của luật: luật
+  không phân biệt được nữa, và chính LLM cũng sai loại lỗi ở ca này.
+- Phép tự kiểm E1 trên lời giải thích của luật đạt 2/2 ở cả 8 ca. Đây là lần đầu phép
+  tự kiểm chạy trên ca lỗi thật.
+
+**Kết luận thận trọng.**
+- Trên 8 ca này, luật viết tay **ngang** LLM về nguyên nhân gốc và loại lỗi.
+- LLM hơn đúng một ca về hành động, và đó là ca nó đúng nhờ may.
+- Số của luật là số **lạc quan**, vì hai chỗ sửa ở trên được làm sau khi đã thấy dữ
+  liệu này.
+- Phù hợp với cách đặt vấn đề ở mục 1: giá trị của XAI nằm ở lời giải thích và các phép
+  kiểm, không nằm ở độ chính xác.
+
+### 13.5. Bản xem trước E2, và hai vấn đề chất lượng dữ liệu
+
+Bản xem trước (trước khi sửa ở mục 13.6): **8 ca, 63 lần gọi, khoảng 298.000 token
+vào, tức khoảng 0,16 USD.**
+Cách sửa dữ liệu đúng như thiết kế: chỉ các dòng của dấu hiệu bị bỏ thay đổi, và phần
+DEVIATIONS cùng OBSERVED CALL GRAPH đổi khớp nhau.
+
+**Vấn đề 1 — ảnh nền của phiên bị nhiễm.** So mức "lúc khỏe" mà phiên này dùng với ảnh
+nền khỏe trên k3s ngày 6/10:
+
+| Cạnh | Nền phiên này | Nền 6/10 |
+|---|---|---|
+| checkoutservice → productcatalogservice | **137,1 ms** | 0,68 ms |
+| frontend → checkoutservice | **300,74 ms** | 20,26 ms |
+| frontend → recommendationservice | **49,12 ms** | 6,48 ms |
+| recommendationservice → productcatalogservice | **41,26 ms** | 2,01 ms |
+| Các cạnh khác (frontend → cart, currency, productcatalog, ad, shipping) | 0,6–2 ms | gần như cũ |
+
+Nguyên nhân rất có thể:
+- Pod productcatalogservice khởi động lại lúc khoảng 06:57:30. Snapshot ca S3 đầu tiên
+  (chụp khoảng 07:02) thấy pod này mới 274 giây tuổi. Nhiều khả năng đó là lúc CPU được
+  trả về 200m, nhưng chưa xác nhận.
+- Ảnh nền chụp lúc 07:00:05, tức cửa sổ 5 phút còn chứa lúc pod đang khởi động.
+- Bốn cạnh bị nhiễm đều ít lưu lượng và đều đi qua productcatalogservice, nên vài lần
+  gọi chậm lúc pod khởi động là đủ đội trung bình lên.
+
+Hệ quả:
+- Suốt phiên, phát hiện cạnh chậm trên 4 cạnh đó kém nhạy (phải chậm gấp 3 lần mức nền
+  đã bị đội). S5 vì vậy chỉ có 1 cạnh bị gắn "chậm" thay vì 2–3 cạnh.
+- E2 đưa các cạnh này về mức "khỏe" 137 ms chứ không phải khoảng 1 ms.
+
+Cách tránh lần sau: chờ ít nhất 5 phút sau mọi lần pod khởi động lại rồi mới chạy
+`eval_run.py`, hoặc ghim một ảnh nền đã biết là sạch bằng `--baseline-file`.
+
+**Vấn đề 2 — pod "vừa tạo lại" của ca trước lọt sang ca sau.** Bộ chạy chỉ chờ pod sẵn
+sàng, không chờ hết cửa sổ 600 giây mà prompt dùng để gắn nhãn "vừa tạo lại". Ví dụ:
+- S2 thấy checkoutservice vừa tạo lại, 457 giây tuổi: do S3 chạy trước nó đã xóa pod.
+- S1 thấy currencyservice, 466–527 giây tuổi: do bước dọn dẹp của S2.
+- S3 lần 2 thấy frontend: do bước dọn dẹp của S4 lần 1.
+
+Hệ quả:
+- Mỗi ca có thêm một dấu hiệu nhiễu. LLM không bị lừa (root đúng 8/8).
+- Nhóm `drop_uncited` của E2 gần như chỉ gồm các nhiễu này, nên phép thử sufficiency
+  trên bộ dữ liệu này **yếu**: bỏ một nhiễu yếu thì khó làm chẩn đoán đổi. Phải ghi rõ
+  khi báo cáo E2.
+- Thí nghiệm phase 6 chạy bằng cùng bộ chạy, nên cũng chịu ảnh hưởng này.
+
+Cách sửa có thể làm (**chưa làm**): trước mỗi ca, chờ tới khi không còn pod nào trẻ hơn
+600 giây. Mỗi ca sẽ lâu thêm khoảng 5–10 phút.
+
+### 13.6. Sửa E2: bỏ bằng chứng đã trích nhưng số RED vẫn còn trong prompt
+
+**Phát hiện.** Đọc kỹ bản xem trước ở mục 13.5 thì thấy `drop_cited` **không bỏ hết**
+bằng chứng đã trích. Lúc đó "vũ trụ" của E2 chỉ gồm cạnh, pod và CPU, không có số liệu
+riêng của service (mục SERVICE METRICS). Nhưng LLM trích loại số này rất nhiều:
+
+| Ca | LLM trích trong `evidence` | Sau `drop_cited`, prompt vẫn còn nguyên |
+|---|---|---|
+| S1 | "productcatalogservice p95 latency 9750.0ms" | `productcatalogservice: … p95 9750.0ms` |
+| S1 | "frontend p95 latency 30000.0ms" | `frontend: … p95 30000.0ms` |
+| S2 | "frontend: 76.7% errors" | `frontend: 2.80 req/s, 76.7% errors` |
+| S4 | "frontend p95 latency 4751.49ms" | `frontend: … p95 4751.49ms` |
+| S5 | "frontend p95 latency 968.78ms" | `frontend: … p95 968.78ms` |
+
+Hệ quả nếu chạy bản cũ: LLM vẫn thấy chính bằng chứng nó đã trích, nên dễ giữ nguyên
+chẩn đoán. E2 sẽ ghi "bỏ bằng chứng mà chẩn đoán không đổi", tức chấm **oan** là không
+trung thực. Necessity bị đo thấp hơn thật.
+
+**Cách sửa:**
+- `facts.py`: thêm `red_signals`. Hai loại:
+  - `p95:<service>` khi p95 trên 500 ms;
+  - `errors:<service>` khi lỗi trên 5%.
+
+  Ngưỡng lấy của `diff.py`, cùng phép so "lớn hơn". Chỉ xét service có dòng trong prompt.
+- **Tách khỏi `signals` có chủ ý.** Độ đầy đủ của E1 vẫn tính trên tập cũ.
+- `grounding.py`: thêm `red_signal_mentioned`. Một câu "nhắc tới" `p95:X` khi có từ
+  khóa độ trễ (p95, latency, slow, timeout, hoặc một số "…ms") mà **chủ thể** là X. Chủ
+  thể xác định bằng `owner_of`, giống cách gán chủ cho con số ở E1. Nhờ vậy:
+  - "frontend -> productcatalogservice: avg 6000ms" là nói về **cạnh**, không tính;
+  - "productcatalogservice p95 9750ms" thì tính.
+
+  `errors:X` làm tương tự với từ khóa lỗi. Kết quả nằm trong `completeness` dưới ba khóa
+  riêng `red_signals`, `red_cited`, `red_mentioned`, không vào các tỉ lệ cũ.
+- `counterfactual.py`: vũ trụ của E2 = `signals` + `red_signals`. Đưa về khỏe:
+  - p95 lấy từ snapshot **khỏe** chụp trên cùng cluster;
+  - lỗi lấy từ cùng snapshot đó;
+  - snapshot không có service đó thì dùng `HEALTHY_FALLBACK` (50 ms, 0%).
+
+  Ghi chú mỗi chỗ sửa nói rõ số lấy từ đâu.
+- `xai_audit.py`: thêm `--healthy`. Mặc định là `data/runs/20261006-234811_smoke-k3s-moi.json`.
+  Lệnh in tên ảnh khỏe đang dùng, cảnh báo nếu ảnh đó có lệch so với thiết kế, và dùng
+  `HEALTHY_FALLBACK` nếu không đọc được file. Đường dẫn ảnh khỏe được ghi vào file kết quả.
+
+**Một lỗi gán chủ thể, phát hiện khi đọc từng câu và đã sửa.** Câu *"Multiple callers
+(frontend, checkoutservice, recommendationservice) show slow edges converging on
+productcatalogservice"* bị tính là nhắc tới p95 của recommendationservice. Lý do: đó là
+service đứng gần từ "slow" nhất. Chủ ngữ thật là "Multiple callers". Sửa: service nằm
+trong ngoặc đã đóng trước từ khóa thì không làm chủ của từ khóa đó.
+
+Hệ quả của lỗi này nếu không sửa: `p95:recommendationservice`, một triệu chứng thật mà
+LLM không nhắc, bị loại khỏi `drop_uncited` của cả hai ca S1.
+
+**Kiểm chứng:**
+- Toàn bộ đầu ra của `xai_audit.py check` (E1, C, bảng đáng tin) **giống hệt từng dòng**
+  trước và sau khi sửa. Độ đầy đủ của E1 đúng là không đổi.
+- Bộ câu biết trước đáp án của E1: vẫn đúng hết.
+- Bộ câu biết trước đáp án mới cho `red_signal_mentioned`: 10 câu, đúng 10. Gồm:
+  - câu về cạnh, phải **không** tính;
+  - danh sách trong ngoặc;
+  - nhiều service trong một câu;
+  - câu về CPU, phải **không** tính.
+- Đọc tay từng câu `evidence` và `reasoning_chain` của 8 ca:
+  - mọi chỗ gán ở `evidence` đều đúng;
+  - ở reasoning còn 3 chỗ gán thừa. *"Multiple slow edges radiate from frontend…"* (S4,
+    cả hai lần) bị tính là nói về p95 của frontend, dù chữ "slow" nói về các cạnh.
+    *"Other services called by frontend and checkoutservice have low latency"* (S5 lần
+    1) bị tính là nói về p95 của checkoutservice. Cả hai dấu hiệu đó đều đã được trích
+    ở `evidence`, nên không đổi nhóm nào.
+- `xai_audit.py rules`: kết quả không đổi, tự kiểm vẫn đạt.
+
+**Bản xem trước mới: 8 ca, 66 lần gọi** (trước là 63), **khoảng 312.000 token vào, tức
+khoảng 0,17 USD.** Thêm 3 lần gọi vì S5 lần 2 giờ có nhóm `drop_uncited`
+(`p95:checkoutservice`, LLM không nhắc). Nhóm thay đổi:
+
+| Ca | Thêm vào `drop_cited` | Thêm vào `drop_uncited` |
+|---|---|---|
+| S1 lần 1 | p95 của productcatalog, frontend, checkout; lỗi của frontend | p95 của recommendationservice |
+| S1 lần 2 | p95 của productcatalog, frontend, checkout | p95 của recommendationservice; lỗi của frontend |
+| S2 cả hai lần | lỗi của checkoutservice, frontend | — |
+| S4 lần 1 | p95 của frontend, cartservice | — |
+| S4 lần 2 | p95 của frontend | — |
+| S5 lần 1 | p95 của frontend, checkoutservice | — |
+| S5 lần 2 | p95 của frontend | p95 của checkoutservice |
+
+Lợi ích phụ cho vấn đề 2 ở mục 13.5: `drop_uncited` của S1 và S5 lần 2 giờ có một
+**triệu chứng thật** chứ không chỉ toàn nhiễu "vừa tạo lại", nên phép thử sufficiency
+mạnh hơn ở các ca đó.
+
+**Giới hạn còn lại, phải ghi khi báo cáo E2:**
+- **Lưu lượng (req/s) không được đưa về khỏe.** Ví dụ S1: productcatalogservice 1,43
+  req/s, so với 13,27 lúc khỏe. Prompt không đánh dấu lưu lượng là bất thường, và LLM
+  không trích nó làm bằng chứng ở 8 ca này.
+- **Prompt chỉ in CPU của service "đáng ngờ".** Bỏ cạnh chậm của productcatalogservice
+  thì nó hết đáng ngờ, nên dòng CPU của nó cũng biến mất khỏi prompt, dù CPU không nằm
+  trong nhóm bị sửa. Ví dụ: S5 lần 2, "0.007 of 0.010 cores (69%)". Đây là hành vi thật
+  của hệ thống với một hệ khỏe, không phải lỗi của phép thử, nhưng nghĩa là `drop_cited`
+  bỏ nhiều hơn đúng phần đã trích.
+- Ảnh khỏe chụp lúc khác (23:48 ngày 6/10), dưới cùng loadgenerator. p95 lúc khỏe vì vậy
+  là mức điển hình của cluster, không phải mức của chính phiên này.
+- Mức "khỏe" của 4 cạnh vẫn là mức nền bị nhiễm (vấn đề 1, mục 13.5).
+
+### 13.7. Kiểm tra trước khi chạy E2 thật
+
+Kiểm toàn bộ đường "chạy thật" mà không gọi API chẩn đoán. Tìm ra một lỗi thật và bổ
+sung ba chỗ.
+
+**Những gì đã khớp, không phải sửa:**
+- Model và phiên bản prompt: cả 8 ca ghi `openai / gpt-4.1-mini / v7`, đúng bằng code
+  hiện tại. Code sinh prompt (`src_thesis/xai/`, `serialize.py`, `replay.py`) không đổi
+  từ commit `4286bb3e`, commit mà k3s phải có để lưu được snapshot.
+- Agent và E2 dựng reasoner giống nhau (`use_cache=False`, temperature 0) và gọi cùng
+  một hàm `diagnose(prompt)`.
+- `fault_type` và `action` là chuỗi (`Literal`), không phải Enum. `top_action()` lấy hành
+  động **đầu tiên**, đúng cách E2 lấy đáp án gốc. Nên phép so "có đổi không" là so chuỗi
+  với chuỗi.
+- Khóa API: có trong `.env` trên WSL. Gọi `models.retrieve` (miễn phí, không chẩn đoán)
+  thì OpenAI xác nhận khóa hợp lệ và có model `gpt-4.1-mini`. Chỉ in trạng thái, không in
+  khóa hay thông báo lỗi.
+
+**Lỗi tìm ra: nhóm `repeat` không gửi đúng prompt gốc.** Prompt dựng lại từ snapshot
+**khác** prompt đã lưu ở **cả 8 ca**. Cùng nội dung và cùng số ký tự, nhưng các cạnh có
+cùng số lần gọi trong OBSERVED CALL GRAPH bị đảo thứ tự. Ví dụ S1:
+`frontend -> checkoutservice: 2 calls` đứng trước ba cạnh 2 lần gọi khác trong prompt
+gốc, nhưng đứng sau chúng khi dựng lại.
+
+Nguyên nhân:
+- `ServiceGraph.to_dict` lưu cạnh theo thứ tự **tên**.
+- Prompt in cạnh theo số lần gọi giảm dần, và các cạnh bằng nhau giữ thứ tự gặp span.
+- Thứ tự gặp span mất khi lưu.
+
+Kiểm chứng ở mục 2 (3557/3557 ký tự) không bắt được lỗi này. Có lẽ ở snapshot khỏe hôm
+đó, các cạnh bằng số lần gọi tình cờ đã đúng thứ tự tên; chưa kiểm lại.
+
+Hệ quả nếu không sửa:
+- `repeat` đo nhiễu nền trên một prompt **khác** prompt gốc.
+- Mọi biến thể `drop_*` khác prompt gốc thêm một chỗ ngoài phần đã sửa.
+- Ở ca nhiều vòng, phép so `startswith` không tìm ra phần phản hồi của vòng trước. E2
+  sẽ **lặng lẽ bỏ** phần đó, và E1 sẽ không nhận các con số trong phần đó. Với dữ liệu
+  hiện có thì chưa xảy ra, vì không ca nào có phản hồi vòng trước.
+
+Cách sửa:
+- `replay.align_edge_order`: đọc thứ tự cạnh trong chính prompt gốc rồi xếp lại snapshot
+  trước khi dựng. Không đổi định dạng snapshot, vì `to_dict` còn dùng ở chỗ khác.
+- `counterfactual.plan_case` và `facts.build_fact_table` gọi hàm này trước khi dựng.
+- Nhóm `repeat` gửi **nguyên văn** `prompt_text` đã lưu, không gửi bản dựng lại.
+- Kết quả có thêm `replay_exact`. Lệnh in cảnh báo nếu có ca không khớp từng ký tự.
+
+**Ba chỗ bổ sung cho lần chạy tốn tiền:**
+- **Lưu dần sau mỗi ca** (`partial: true` cho tới ca cuối). Đứt mạng giữa chừng thì các ca
+  đã trả tiền vẫn còn.
+- **Một lần gọi lỗi không làm dừng cả loạt.** Lần gọi đó được ghi `ok: false` kèm lỗi, và
+  không tính vào tỉ lệ đổi.
+- **In chi phí thật**: cộng dồn sau mỗi ca, tổng token và USD ở cuối, ghi vào file kết quả.
+
+**Chốt thêm chỉ số phụ trước khi chạy.** Tổng kết chỉ đếm root cause đổi. Nếu LLM giữ
+root nhưng đổi loại lỗi thì con số chính không thấy. Ví dụ S5: bỏ bằng chứng CPU mà
+`resource_exhaustion` thành `latency`. Vì vậy thêm `diagnosis`: root **hoặc** loại lỗi
+đổi. Chỉ số chính vẫn là root như mục 7. Chốt trước khi thấy số, để không ai chọn chỉ
+số sau khi đã biết chỉ số nào đẹp hơn.
+
+**Kiểm chứng:**
+- Dựng lại sau khi sửa: **8/8 ca giống từng ký tự** với prompt đã gửi.
+- 14 biến thể `drop_*`: không biến thể nào còn dòng chỉ bị đổi chỗ. Chúng khác prompt
+  gốc đúng ở những chỗ đã sửa.
+- Ca có phản hồi vòng trước (tự tạo, vì dữ liệu thật chưa có): `replay_exact` đúng, và
+  mọi biến thể đều giữ nguyên phần phản hồi ở cuối.
+- Chạy thử toàn bộ lệnh `counterfactual` bằng LLM giả (thay `XaiReasoner`, ghi ra thư
+  mục nháp, không đụng `data/xai_audit/`):
+  - cố ý cài một lần gọi ném lỗi mạng và một lần trả về không có lời giải thích: cả loạt
+    chạy tiếp, đếm đúng 2 lần hỏng;
+  - file kết quả lưu dần, cuối cùng `partial: false`, có `usage` và `healthy_reference`.
+- LLM giả đổi root **chỉ** ở `drop_cited`: ra đúng `repeat 0, drop_cited 1.0,
+  drop_uncited 0`, necessity 1,0, gap 1,0, và 66 lần gọi = 24 + 24 + 18.
+- LLM giả **chỉ đổi loại lỗi**: `flip_root` đều 0, còn `diagnosis` ở `drop_cited` là 1,0.
+  Đúng ý đồ.
+- Đầu ra của `xai_audit.py check` vẫn giống hệt từng dòng. Bộ câu biết trước đáp án của
+  E1 và của phần RED vẫn đúng hết. `rules` vẫn đạt tự kiểm.
+
+**Còn lại, không sửa được trước khi chạy:**
+- Nếu mất mạng hẳn, `reasoner.py` thử lại mãi, mỗi 5 giây: không tốn tiền nhưng treo. Gặp
+  thì Ctrl+C; các ca đã xong vẫn nằm trong file nhờ lưu dần. Không sửa `reasoner.py` vì
+  agent cũng dùng nó.
+- Root so bằng chuỗi chính xác (sau `strip().lower()`). LLM gọi
+  `productcatalog` thay vì `productcatalogservice` cũng tính là "đổi". Cả 8 lời giải
+  thích gốc đều dùng đúng tên deployment. Sau khi chạy phải xem các lần "đổi" có phải
+  chỉ do khác cách viết tên không.
+
+### 13.8. Lần chạy E2 thật đầu tiên — bản code CŨ, trên k3s
+
+**Chạy gì.** Lệnh `counterfactual` chạy trên máy k3s, ở commit đã đẩy lên trước mục
+13.6 và 13.7. Tức là bản này:
+- **chưa** có dấu hiệu RED: `drop_cited` không sửa p95 và tỉ lệ lỗi của service;
+- nhóm `repeat` gửi prompt dựng lại, các cạnh "hòa" bị đảo thứ tự, không phải nguyên văn;
+- chưa có chỉ số phụ `diagnosis`, chưa in chi phí thật.
+
+63 lần gọi, khoảng 298.000 token vào. Chi phí ước tính khoảng 0,15 USD; bản cũ không in
+chi phí thật. File kết quả nằm trên k3s:
+`data/xai_audit/20261007-164344_counterfactual.json`, chưa mang về WSL.
+
+**Kết quả từng ca** (root / loại lỗi; mỗi nhóm 3 lần gọi):
+
+| Ca | Chẩn đoán gốc | `drop_cited` | `drop_uncited` |
+|---|---|---|---|
+| S1 lần 1 | productcatalogservice / latency | checkoutservice ×2, recommendationservice ×1 | giữ nguyên ×3 |
+| S1 lần 2 | productcatalogservice / latency | recommendationservice ×3 | giữ nguyên ×3 |
+| S2 lần 1 | currencyservice / crash | checkoutservice / **pod_kill** ×3 | giữ nguyên ×3 |
+| S2 lần 2 | currencyservice / crash | checkoutservice / **pod_kill** ×3 | giữ nguyên ×3 |
+| S4 lần 1 | frontend / resource_exhaustion | **giữ nguyên** ×3 | không có nhóm này |
+| S4 lần 2 | frontend / resource_exhaustion | frontend / **latency**, no_action ×3 | giữ nguyên ×3 |
+| S5 lần 1 | productcatalogservice / resource_exhaustion | frontend / latency ×3 | không có nhóm này |
+| S5 lần 2 | productcatalogservice / latency | frontend ×2, none ×1 | không có nhóm này |
+
+Nhóm `repeat`: **24/24 lần gọi ra đúng y chẩn đoán gốc**, cả root, loại lỗi lẫn hành động.
+
+**Số tổng (tính trên tổng số lần gọi):**
+
+| | `repeat` | `drop_cited` | `drop_uncited` | necessity | sufficiency_violation | gap |
+|---|---|---|---|---|---|---|
+| Root đổi (chỉ số chính) | 0/24 | 18/24 = 0,75 | 0/15 | 0,75 | 0 | 0,75 |
+| Root hoặc loại lỗi đổi (chỉ số phụ, mình tính tay từ đầu ra) | 0/24 | 21/24 = 0,875 | 0/15 | 0,875 | 0 | 0,875 |
+
+**Sau `drop_cited`, LLM còn thấy gì.** Bản cũ dựng lại đúng prompt đó trên WSL rồi đọc:
+
+| Ca | Còn lại trong prompt | LLM chuyển sang |
+|---|---|---|
+| S1 | Hai cạnh chậm frontend → checkoutservice và frontend → recommendationservice. LLM chỉ nhắc chúng trong reasoning, nên không vào nhóm nào. Còn cả **productcatalogservice p95 9750 ms** (đã trích, bản cũ không sửa) | checkoutservice / recommendationservice, tức hai service nằm ở đầu hai cạnh chậm còn lại |
+| S2 | Pod checkoutservice **"RECREATED 457s ago"**, là nhiễu do ca S3 chạy trước để lại (vấn đề 2, mục 13.5). Còn cả checkoutservice 100% lỗi (đã trích, không sửa) | checkoutservice / **pod_kill**, đúng theo dấu hiệu nhiễu |
+| S4 lần 1 | DEVIATIONS "none", CPU "no service is close". Nhưng **frontend p95 4751 ms** (đã trích, không sửa) và adservice 39,4% lỗi vẫn còn | không đổi |
+| S5 | DEVIATIONS "none", CPU "none", pod khỏe hết. Chỉ còn **frontend p95 968 / 1796 ms**, là bằng chứng đã trích mà bản cũ không sửa | frontend |
+
+**Đọc kết quả thế nào:**
+- **Mức nhiễu nền 0/24 là số tin được.** Ở temperature 0, cùng một prompt cho ra cùng
+  một chẩn đoán. Thêm một điều: prompt `repeat` ở bản này bị đảo thứ tự cạnh (mục
+  13.7), vậy mà 24/24 vẫn giữ nguyên chẩn đoán. Với 8 ca này, lỗi thứ tự không làm đổi
+  kết quả.
+- **Necessity 0,75 CHƯA dùng làm số báo cáo được.** Lỗi ở mục 13.6 làm lệch kết quả theo
+  cả hai chiều:
+  - S5: chẩn đoán đổi **vì** bằng chứng đã trích còn sót. LLM bám vào frontend p95 còn
+    nằm trong prompt. Bản mới sửa cả số đó, nên kết quả có thể khác (ví dụ ra "none").
+  - S4 lần 1: chẩn đoán không đổi, nhưng frontend p95 4751 ms, bằng chứng chính đã trích,
+    vẫn còn. Không thể kết luận lời giải thích này không trung thực.
+- **Sufficiency 0/15 yếu, đúng như đã báo trước ở mục 13.5.** Ở bản cũ, nhóm
+  `drop_uncited` chỉ toàn nhiễu "vừa tạo lại", và 3/8 ca không có nhóm này.
+- **Chỉ số phụ có tác dụng ngay.** S4 lần 2 giữ root nhưng đổi `resource_exhaustion`
+  thành `latency` và bỏ hành động. Tức bằng chứng CPU đúng là thứ gánh loại lỗi và hành
+  động. Chỉ số chính (root) không thấy điều này.
+- **Một quan sát cần kiểm thêm, chưa phải kết luận:** khi bị bỏ bằng chứng đã trích, LLM
+  hầu như không nói "hệ thống khỏe". Chỉ 1/24 lần ra "none". Nó chuyển sang bất thường
+  mạnh nhất còn lại, kể cả nhiễu (S2). Ở cả 8 ca, prompt sau khi sửa vẫn còn bất thường,
+  nên chưa tách được đây là thói quen của LLM hay chỉ là phản ứng đúng với dữ liệu còn lại.
+
+**Việc lần chạy bản mới sẽ trả lời:**
+- S4 lần 1: bỏ thêm frontend p95 thì chẩn đoán có đổi không?
+- S5: bỏ thêm frontend p95 thì LLM chuyển sang "none" hay sang chỗ khác?
+- S1 lần 2 và S5 lần 2: nhóm `drop_uncited` giờ có một triệu chứng thật (mục 13.6). Bỏ
+  nó thì chẩn đoán có giữ nguyên không?
+
+So từng ca giữa bản cũ và bản mới sẽ cho thấy lỗi ở mục 13.6 thực sự làm lệch bao nhiêu.
+
+### 13.9. Việc tiếp
+
+- Chạy E2 bản đã sửa trên WSL: `python scripts/xai_audit.py counterfactual
+  data/eval/20261007-065802 --repeats 3`, 66 lần gọi, khoảng 0,17 USD, khoảng 10 phút. Cần
+  bạn đồng ý.
+- (Tùy chọn) Mang file kết quả bản cũ từ k3s về bằng ConfigMap, để giữ đủ `evidence` của
+  từng lần gọi.
+- Commit dữ liệu phiên `20261007-065802` cùng các chỗ sửa của mục 13.
+- Quyết định có sửa bộ chạy cho vấn đề 2 không, rồi mới thu thêm dữ liệu.
