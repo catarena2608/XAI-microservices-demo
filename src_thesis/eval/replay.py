@@ -99,9 +99,9 @@ def load_cases(runs_dir: Path = RUNS_DIR) -> list[dict]:
     GẦN NHẤT TRƯỚC nó. Cách này đúng vì quy trình luôn là tiêm lỗi rồi mới chụp ảnh,
     và mỗi lần chỉ có một lỗi đang hoạt động.
 
-    Trả về danh sách dict {scenario, snapshot, ground_truth, prompt_text}.
+    Trả về danh sách dict {scenario, snapshot_file, snapshot, ground_truth, prompt_text}.
     """
-    snaps: list[tuple[float, str, dict]] = []
+    snaps: list[tuple[float, str, dict, str]] = []
     truths: list[tuple[float, dict]] = []
 
     for path in sorted(runs_dir.glob("*.json")):
@@ -114,17 +114,19 @@ def load_cases(runs_dir: Path = RUNS_DIR) -> list[dict]:
         if "groundtruth" in path.name:
             truths.append((float(d.get("injected_at", 0)), d))
         elif d.get("label", "").endswith("-sau"):
-            snaps.append((float(d.get("taken_at", 0)), d["label"], d))
+            snaps.append((float(d.get("taken_at", 0)), d["label"], d, path.name))
 
     truths.sort(key=lambda t: t[0])
     cases: list[dict] = []
-    for taken_at, label, snap in sorted(snaps, key=lambda s: s[0]):
+    for taken_at, label, snap, fname in sorted(snaps, key=lambda s: s[0]):
         prior = [t for t in truths if t[0] <= taken_at]
         if not prior:
             continue
         gt = prior[-1][1]
         cases.append({
             "scenario": label.replace("-sau", ""),
+            # Ten file, de ket qua danh gia tro nguoc duoc ve DUNG snapshot da dung.
+            "snapshot_file": fname,
             "snapshot": snap,
             "ground_truth": gt,
             "prompt_text": rebuild_prompt_text(snap),

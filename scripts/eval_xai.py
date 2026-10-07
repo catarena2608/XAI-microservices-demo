@@ -115,6 +115,9 @@ def run_cases(cases: list[dict], provider: str, model: str | None,
             per_scenario.setdefault(sid, []).append(sc)
             records.append({
                 "scenario": sid, "run": i, "ok": True,
+                # Snapshot nao da sinh ra loi giai thich nay. Thieu dong nay thi
+                # danh gia E1/E2 (scripts/xai_audit.py) phai doan theo ten kich ban.
+                "snapshot_file": c.get("snapshot_file", ""),
                 "score": sc.to_dict(), "result": res.to_dict(),
             })
             mark = "DUNG" if sc.root_cause_correct else "SAI "
