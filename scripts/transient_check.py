@@ -65,6 +65,21 @@ def countdown(seconds: int, label: str) -> None:
             print(f"    con {left}s", flush=True)
 
 
+def _say(msg: str) -> None:
+    """In ma KHONG BAO GIO nem loi.
+
+    Dung trong buoc don dep. Chay `... | tee log` roi bam Ctrl+C thi `tee` chet truoc,
+    va lenh `print` dau tien trong `finally` nem BrokenPipeError — phan hoan tac phia
+    sau khong bao gio chay va loi bi bo lai tren cluster. Da xay ra that ngay
+    2026-10-08: lan do S1 + restart_pod bi ngat, loi S1 con treo, hai lan chay sau bi
+    tu choi vi "Dang co loi chua hoan tac".
+    """
+    try:
+        print(msg, flush=True)
+    except (BrokenPipeError, OSError, ValueError):
+        pass
+
+
 def revert_all(executor: ActionExecutor, action_result) -> None:
     """Don theo thu tu NGUOC chieu tac dong: go hanh dong truoc, roi go loi da tiem.
 
@@ -72,23 +87,23 @@ def revert_all(executor: ActionExecutor, action_result) -> None:
     lai tren he thong va ca sau bat dau tu mot trang thai khac ca truoc.
     """
     if action_result is not None and action_result.applied:
-        print("  go hanh dong...", flush=True)
+        _say("  go hanh dong...")
         try:
             undo = executor.undo(action_result)
-            print(f"    {undo.detail}")
+            _say(f"    {undo.detail}")
         except Exception as e:
-            print(f"    LOI khi go hanh dong: {e}")
+            _say(f"    LOI khi go hanh dong: {e}")
 
     faults = load_active_faults()
     for active in reversed(faults):
         k8s = K8sClient(namespace=active.namespace)
-        print(f"  hoan tac {active.ground_truth.fault_id}...", flush=True)
+        _say(f"  hoan tac {active.ground_truth.fault_id}...")
         try:
             active.revert(k8s)
             ok = k8s.wait_ready(active.ground_truth.target_service, timeout=180)
-            print(f"    {active.ground_truth.target_service} san sang: {ok}")
+            _say(f"    {active.ground_truth.target_service} san sang: {ok}")
         except Exception as e:
-            print(f"    LOI khi hoan tac: {e}")
+            _say(f"    LOI khi hoan tac: {e}")
 
 
 def main() -> int:
@@ -223,7 +238,7 @@ def main() -> int:
         return 0
 
     finally:
-        print("\n=== DON DEP ===", flush=True)
+        _say("\n=== DON DEP ===")
         revert_all(executor, action_result)
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         out = RESULTS_DIR / (time.strftime("%Y%m%d-%H%M%S")

@@ -460,3 +460,37 @@ thống đã được hoàn tác: `inject.py --status` báo sạch.
 Hai lần đo đó trong vòng lặp đầu không để lại file, chưa rõ vì sao. Đang hỏi log. Phải đo
 lại, nhất là `rollback`: nó là đối chứng, cho biết phép đo có thấy được độ trễ giảm thật
 khi lỗi thật sự được gỡ hay không.
+
+### 14. Vì sao chưa có kết quả `restart_pod` và `rollback`, và lỗ hổng ở bước dọn dẹp
+
+**Log `~/transient-s1.log` cho thấy:**
+- dòng 5: lần đo `restart_pod` bắt đầu, nhưng **không có** `KET LUAN` hay `DON DEP` nào
+  của nó;
+- dòng 20 và 27: hai lần chạy `adjust_resources` sau đó bị từ chối, vì "Dang co loi chua
+  hoan tac";
+- dòng 29 trở đi: lần thứ ba mới chạy, sau khi lỗi được hoàn tác bằng tay;
+- `rollback` chưa chạy lần nào.
+
+**Nguyên nhân nhiều khả năng nhất.**
+- Vòng lặp bị Ctrl+C trong lúc `restart_pod` đang chạy, sau khi đã tiêm S1.
+- Ctrl+C gửi tín hiệu cho mọi tiến trình đang chạy ở tiền cảnh, nên `tee` chết cùng lúc.
+- Python nhận KeyboardInterrupt và vào `finally`. Nhưng lệnh đầu tiên ở đó là
+  `print("=== DON DEP ===")`, ghi vào đường ống mà `tee` đã đóng, nên ném
+  `BrokenPipeError`.
+- Phần hoàn tác phía sau **không bao giờ chạy**, và lỗi S1 bị bỏ lại trên cluster.
+
+**Đã tái hiện bằng giả lập:** đóng đầu đọc của đường ống rồi gọi `print`, đúng là ra
+`BrokenPipeError`.
+
+**Sửa:**
+- `scripts/transient_check.py`: mọi lệnh in trong bước dọn dẹp đi qua `_say()`, hàm
+  này nuốt `BrokenPipeError` và `OSError`.
+  - Kiểm: giả lập "tee đã chết", `revert_all` vẫn gọi đủ `undo` rồi `revert`.
+- `src_thesis/eval/runner.py`: **bộ chạy thí nghiệm chính có cùng lỗ hổng.** `_cleanup`
+  nằm trong `finally` và mở đầu bằng `self.log(...)`.
+  - Sửa: `self.log = _safe_log(log)`, hàm ghi log không bao giờ ném lỗi.
+  - Kiểm: giả lập đầu ra bị đứt, ghi log vẫn chạy tiếp, không ném lỗi.
+  - Phiên qua đêm không gặp vì không ai ngắt. Nhưng các phiên dài sau này (thí nghiệm
+    chính khoảng 30 tiếng) gần như chắc sẽ có lúc phải ngắt.
+
+**Việc tiếp:** đo lại `restart_pod` và `rollback`.

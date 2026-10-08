@@ -79,6 +79,24 @@ BASELINE_GIVE_UP_S = 600
 BASELINE_POLL_GAP_S = 90
 
 
+def _safe_log(log):
+    """Bọc hàm ghi log để nó KHÔNG BAO GIỜ ném lỗi.
+
+    Bộ chạy thường chạy kiểu `python -u scripts/eval_run.py ... | tee log`. Bấm Ctrl+C
+    thì `tee` chết cùng lúc, và lệnh `print` đầu tiên sau đó ném BrokenPipeError. Phần
+    dọn dẹp nằm trong `finally` và mở đầu bằng `self.log(...)`, nên lỗi đó làm nó dừng
+    ngay — lỗi đang tiêm bị bỏ lại trên cluster và ca sau bị nhiễm. Đã xảy ra thật với
+    `scripts/transient_check.py` ngày 2026-10-08. Mất vài dòng log thì chịu được, bỏ
+    sót bước hoàn tác thì không.
+    """
+    def inner(msg: str = "") -> None:
+        try:
+            log(msg)
+        except (BrokenPipeError, OSError, ValueError):
+            pass
+    return inner
+
+
 class CaseAborted(Exception):
     """Ca này không chạy được. Ghi lại lý do rồi đi tiếp ca sau."""
 
@@ -123,7 +141,7 @@ class EvalRunner:
         self.max_rounds = max_rounds
         self.dry_run = dry_run
         self.baseline_give_up_s = baseline_give_up_s
-        self.log = log
+        self.log = _safe_log(log)
 
         self.out_dir = Path(out_dir) / self.run_id
         self.k8s = K8sClient(namespace="default")
