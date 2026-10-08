@@ -226,3 +226,149 @@ của biến thể:
    nháp không mất theo. Nội dung cũ còn trong nhật ký hội thoại, khôi phục được.
 6. Bước F (twin): đo độ khớp của twin trên cluster mới, rồi mới tới thí nghiệm chính. Vẫn
    chưa làm.
+
+---
+
+## 2026-10-08 (sáng)
+
+### 6. Kết quả phiên qua đêm `20261007-171533`
+
+**Chạy thế nào.**
+- Bắt đầu 17:15 UTC (giờ máy k3s). Ảnh nền đầu phiên `20261007-171535_baseline-clean.json`, 14 cạnh.
+- **20/20 ca xong.** Không ca nào bị bỏ, log không có lỗi. Sau phiên, `inject.py --status`
+  báo không còn lỗi nào đang tiêm.
+- Log có **19 dòng "pod tre hon 600s … cho …"**. Gần như ca nào cũng phải chờ pod do ca
+  trước tạo lại, tức phần sửa ở mục 2 đã thực sự làm việc.
+- Chi phí LLM: 4102 token/ca, khoảng 0,0021 USD/ca.
+
+**Mang về WSL.**
+- Trên k3s: nén thư mục phiên thành `.tgz` (110.273 byte, so với 820 KB chưa nén, sát giới
+  hạn 1 MB của ConfigMap), rồi đưa vào ConfigMap dạng `binaryData`.
+- Trên WSL:
+  - kéo về: đúng 110.273 byte;
+  - kiểm danh sách file trong gói **trước** khi giải nén: không có đường dẫn tuyệt đối hay
+    `..`, tất cả nằm dưới `20261007-171533/`;
+  - giải nén với `filter="data"`: 21 file, 786.624 byte, cả 21 đọc được JSON;
+  - không có mẫu khóa API;
+  - xóa ConfigMap, đóng tunnel.
+
+**Hai vấn đề chất lượng dữ liệu của phiên trước đã hết:**
+
+| | Phiên `065802` (trước khi sửa) | Phiên `171533` (sau khi sửa) | Ảnh nền sạch 6/10 |
+|---|---|---|---|
+| Mức "lúc khỏe": checkoutservice → productcatalogservice | 137,1 ms | 0,64 ms | 0,68 ms |
+| frontend → checkoutservice | 300,74 ms | 15,96 ms | 20,26 ms |
+| frontend → recommendationservice | 49,12 ms | 4,08 ms | 6,48 ms |
+| recommendationservice → productcatalogservice | 41,26 ms | 1,93 ms | 2,01 ms |
+| Vòng có pod "vừa tạo lại" **không** thuộc lỗi đang tiêm | 7/8 | **0/17** | |
+
+Pod "vừa tạo lại" còn thấy trong prompt bây giờ đều là của **chính service bị tiêm**.
+Tiêm độ trễ và giới hạn CPU đều làm Kubernetes tạo lại pod, nên đó là một phần thật của
+lỗi.
+
+**Số vòng có chẩn đoán: 17/20.** 3/4 ca S3 không có chẩn đoán vì lúc quan sát hệ thống đã
+khỏe lại; pod bị xóa được tạo lại rất nhanh. Phiên trước cũng vậy. Đây là hành vi đúng của
+agent.
+
+### 7. E1 trên phiên mới, và ba lỗi của bộ chấm (đã sửa)
+
+**Lần chấm đầu:**
+- soundness 2 / 1 / 0 = 14 / 1 / 2;
+- 330/331 con số đúng.
+
+Đọc tay cả ba cờ: **cả ba là lỗi của bộ chấm**, không phải lỗi của LLM.
+
+| Ca | Câu của LLM | Bộ chấm nói | Thực tế | Sửa |
+|---|---|---|---|---|
+| S2 lần 2 | "frontend -> checkoutservice: 100.0% errors (12/12 calls), **0.0% healthy error rate**" | số 0 đặt sai chỗ | Đúng: prompt có "luc khoe manh 0.0%". Bộ chấm đọc số này là tỉ lệ lỗi **hiện tại**, vì chữ "healthy" đứng **sau** con số. Hai câu giống hệt ở cùng ca chỉ được chấm "đúng" do **may**: số 0 khớp nhầm với tỉ lệ lỗi của currencyservice | `_pct_kinds`: chữ healthy / baseline / normal đứng ngay sau dấu % thì là tỉ lệ lỗi lúc khỏe |
+| S2 lần 3 | "**Other** services on the critical path have no errors…" | trái sự thật, hiểu thành "cả hệ thống không lỗi" | "Other" đã loại trừ các service đang lỗi. Không rõ tập nào, nên không kiểm được | Phạm vi có other / remaining / rest of thì không gán chủ thể "cả hệ thống" |
+| S5 lần 1 | "near CPU resource limit but **not fully throttled**" | gây hiểu nhầm, hiểu thành "CPU thấp" | Đúng: CPU 73% trần | Phủ định một phần (not fully / completely / entirely / totally) thì bỏ qua, không đảo thành "CPU thấp" |
+
+**Kiểm hồi quy.**
+- Bộ câu biết trước đáp án đã mất cùng thư mục nháp (mục 1). Thay vào đó, mình so toàn bộ
+  đầu ra của `xai_audit.py check` trên **mọi** dữ liệu trước và sau khi sửa.
+- **Chỉ đúng 3 dòng của 3 cờ trên thay đổi**, cộng các số tổng đi theo.
+
+**E1 sau khi sửa, phiên `171533`:**
+- soundness 2 / 1 / 0 = **17 / 0 / 0**;
+- con số: **331/331 đúng**, 0 đặt sai chỗ, 0 bịa;
+- khẳng định dạng chữ: 116 câu, 91 đúng, 0 gây hiểu nhầm, 0 trái sự thật, 25 không kiểm
+  được;
+- điều kiện tiên quyết: 37/37 đúng;
+- root cause có căn cứ: 17/17;
+- độ đầy đủ: trung bình 83% dấu hiệu được trích trong evidence, 93% với dấu hiệu của chính
+  root cause.
+
+### 8. C — lời giải thích có khớp hành động không
+
+**6/17 vòng bị cờ. Đọc tay: cả 6 là phát hiện thật.** Có hai kiểu:
+
+1. **S1, cả 4 lần: tự loại nguyên nhân CPU rồi đề xuất tăng CPU.**
+   - Lời giải thích ghi *"CPU usage for productcatalogservice is very low (1% of limit), so
+     resource exhaustion is unlikely"*.
+   - Hành động: `adjust_resources`, `cpu_limit` lên 400m hoặc "increase".
+   - Bộ chấm độ chính xác vẫn tính hành động này là **đúng**, vì đáp án của S1 cho phép
+     `adjust_resources`, `restart_pod`, `rollback`.
+   - Nhưng lỗi tiêm là độ trễ cố ý (biến `EXTRA_LATENCY`). Tăng CPU không gỡ được nó, và
+     chính lời giải thích đã nói CPU không phải nguyên nhân. Bộ luật chọn `rollback`.
+   - **Đây là lỗi mà điểm chính xác bỏ sót, còn C bắt được.** Đáng cân nhắc: danh sách đáp
+     án hành động của S1 có đang quá rộng không. Đó là chuyện thiết kế phép chấm, cần bạn
+     quyết.
+2. **S5, 2 lần: nhãn loại lỗi không khớp chính lời giải thích.**
+   - Nhãn là `latency`, trong khi đáp án là `resource_exhaustion`.
+   - Reasoning thì ghi chạm 73–76% trần CPU ("likely resource constrained, causing
+     latency"), và hành động là tăng CPU.
+   - C bắt đúng **cả 2/2** lần sai loại lỗi của phiên này.
+
+**Bảng "đáng tin"** (n nhỏ, đọc số đếm):
+
+| Nhóm | n | root đúng | loại lỗi đúng | hành động đúng |
+|---|---|---|---|---|
+| Qua kiểm nhất quán | 11 | 11/11 | **11/11** | 11/11 |
+| Bị cờ nhất quán | 6 | 6/6 | **4/6** | 6/6 |
+| Confidence tự khai ≥ 0,9 | 17 (tất cả) | 17/17 | 15/17 | 17/17 |
+
+- Root và hành động đúng 100% ở cả hai nhóm, nên phép kiểm không tách được gì trên hai thứ
+  đó: đã chạm trần.
+- Loại lỗi thì tách được: mọi lần sai đều nằm trong nhóm bị cờ.
+- **Confidence tự khai không tách được gì**: cả 17 lần đều ≥ 0,9, kể cả 2 lần sai loại lỗi.
+
+### 9. Bộ luật trên phiên mới: lần đầu chạy trên dữ liệu chưa dùng để chỉnh nó
+
+| | Luật | LLM |
+|---|---|---|
+| Root cause | 17/17 | 17/17 |
+| Loại lỗi | **17/17** | 15/17 |
+| Hành động (theo đáp án) | 17/17 | 17/17 |
+
+Tự kiểm bộ chấm E1 trên lời giải thích do luật sinh ra: đạt.
+
+**Phải nói thẳng khi viết báo cáo:**
+- Trên 5 loại lỗi này, một bộ luật viết tay chẩn đoán **ít nhất bằng** LLM.
+- Bộ luật được viết khi đã biết 5 loại lỗi này. Nó là mốc so sánh, không phải đối thủ
+  công bằng trên lỗi lạ.
+- Nhưng kết quả này nghĩa là **không thể** lập luận giá trị của XAI bằng độ chính xác
+  chẩn đoán trên các kịch bản này. Giá trị phải nằm ở lời giải thích và các phép kiểm
+  nó (E1, C, E2), đúng như cách đặt vấn đề ở mục 1 của danh-gia-xai.md.
+- Mục 8 cho một ví dụ cụ thể: ở S1, C bắt được hành động mâu thuẫn với lời giải thích, mà
+  điểm chính xác vẫn tính là đúng.
+
+### 10. Những số trong bảng tổng của bộ chạy KHÔNG được dùng
+
+- **"chi so 7 twin fidelity: 100% (6/6)"** đọc từ file `20260824-113038_fidelity.json`,
+  tức phép đo tháng 8 trên **cluster cũ**. Nó không nói gì về cluster k3s hiện tại. Đo
+  lại là việc của bước F.
+- **MTTR và "không hồi phục 17/20"**: chế độ `xai_only` chỉ chẩn đoán, không sửa, nên
+  không có gì để hồi phục. Số này vô nghĩa với phiên này.
+
+### 11. Việc tiếp
+
+1. **E2 trên phiên mới.** 17 vòng, khoảng 0,02 USD mỗi vòng, tức khoảng **0,35 USD**. Nên
+   quyết hai lỗ hổng thiết kế ở mục 4 trước ("service im lặng"; biến thể tự mâu thuẫn).
+   Phiên mới đã gỡ được lỗ hổng 3 (ảnh nền nhiễm) và nhiễu "vừa tạo lại", nên E2 trên dữ
+   liệu này sẽ sạch hơn hẳn lần trước.
+2. **Đưa bộ câu biết trước đáp án vào repo** (`tests/`). Hôm nay đã phải dùng so-toàn-bộ-
+   đầu-ra để thay. Cách đó bắt được thay đổi ngoài ý muốn, nhưng không chứng minh được
+   câu nào chấm đúng.
+3. Quyết có thu hẹp đáp án hành động của S1 không (mục 8).
+4. Bước F (twin) trên cluster mới.

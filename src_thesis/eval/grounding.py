@@ -199,12 +199,20 @@ def _latency_kinds(before: str, owner: str | None) -> list[str]:
     return ["p95_ms", "avg_ms"]
 
 
+_HEALTHY_AFTER = re.compile(r"\s*(?:healthy|baseline|normal|luc khoe)", re.I)
+
+
 def _pct_kinds(before: str, after: str) -> list[str]:
     near = before[-30:]
     if _KW_THROUGHPUT.search(near) or _KW_THROUGHPUT.search(after):
         return ["throughput_pct"]
     if _KW_CPU.search(after[:20]) or _KW_CPU.search(near):
         return ["cpu_pct"]
+    if _HEALTHY_AFTER.match(after):
+        # "100.0% errors (12/12 calls), 0.0% healthy error rate": chu "healthy" dung
+        # NGAY SAU con so. Truoc 2026-10-08 so nay bi doc la ti le loi hien tai va chi
+        # "dung" khi tinh co trung voi mot so 0 khac.
+        return ["base_error_pct"]
     healthy = _KW_HEALTHY.search(near)
     if healthy and (_KW_ERROR.search(near) or _KW_ERROR.search(after[:15])
                     or not _KW_CPU.search(near)):
@@ -478,6 +486,11 @@ _TEXT_RULES = [
 
 _GLOBAL_SCOPE = re.compile(r"any (?:edge|service)|all (?:edges|services)|anywhere|"
                            r"for any service|on any", re.I)
+# "Other services on the critical path have no errors": tap con con lai, khong ro
+# gom nhung service nao — khong phai khang dinh cho ca he thong.
+_SUBSET_SCOPE = re.compile(r"\bother\b|\bremaining\b|\brest of\b", re.I)
+# "not fully throttled": phu dinh mot phan, khong co nghia la CPU thap.
+_PARTIAL_NEG = re.compile(r"\b(?:fully|completely|entirely|totally)\s*$", re.I)
 
 
 def extract_text_claims(text: str, mentions: list[Mention]) -> list[TextClaim]:
@@ -489,6 +502,8 @@ def extract_text_claims(text: str, mentions: list[Mention]) -> list[TextClaim]:
                 continue
             taken.append((m.start(), m.end()))
             negated = bool(_NEG.search(text[max(0, m.start() - 30):m.start()]))
+            if negated and _PARTIAL_NEG.search(text[:m.start()]):
+                continue
             r = rule
             if negated:
                 # "not throttled" la khang dinh CPU thap; "not slow" la do tre thap.
@@ -502,6 +517,8 @@ def extract_text_claims(text: str, mentions: list[Mention]) -> list[TextClaim]:
             if owner is None and r in ("no_cpu_data", "cpu_low", "cpu_high", "no_errors"):
                 # "No CPU data is available": cau ve ca he thong, khong ve service nao.
                 owner = GLOBAL
+            if owner == GLOBAL and _SUBSET_SCOPE.search(scope):
+                owner = None
             snippet = text[max(0, m.start() - 40):min(len(text), m.end() + 20)].strip()
             out.append(TextClaim(snippet, r, owner))
     return out

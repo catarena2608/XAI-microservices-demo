@@ -1,0 +1,1061 @@
+{
+  "case_id": "S5_xai_only_r4",
+  "run_id": "20261007-171533",
+  "scenario": "S5",
+  "mode": "xai_only",
+  "repeat": 4,
+  "model": "gpt-4.1-mini",
+  "baseline_source": "20261007-171535_baseline-clean.json (14 canh)",
+  "injected_at": 1791408988.8211339,
+  "injected_at_human": "2026-10-07 21:36:28",
+  "ground_truth": [
+    {
+      "fault_id": "F4-productcatalogservice-cpu",
+      "target_service": "productcatalogservice",
+      "fault_type": "resource_exhaustion",
+      "params": {
+        "cpu_limit": "10m",
+        "old_cpu_limit": "200m",
+        "old_cpu_request": "100m"
+      },
+      "expected_propagation": [
+        "checkoutservice",
+        "frontend",
+        "recommendationservice"
+      ],
+      "correct_action_class": "easy",
+      "correct_actions": [
+        "adjust_resources",
+        "scale_up"
+      ],
+      "injected_at": 1791408988.8211339,
+      "injected_at_human": "2026-10-07 21:36:28"
+    }
+  ],
+  "settle_seconds": 300,
+  "errors": [],
+  "report": {
+    "run_id": "S5_xai_only_r4",
+    "mode": "xai_only",
+    "namespace": "default",
+    "started_at": 1791409318.8707893,
+    "started_at_human": "2026-10-07 21:41:58",
+    "took_s": 6.46,
+    "rounds_used": 1,
+    "max_rounds": 3,
+    "baseline_source": "do ben goi truyen vao",
+    "has_baseline": true,
+    "llm": {
+      "provider": "openai",
+      "model": "gpt-4.1-mini",
+      "prompt_version": "v7"
+    },
+    "healthy_at_end": false,
+    "stop_reason": "che do xai_only: chi chan doan, khong hanh dong",
+    "total_input_tokens": 4282,
+    "total_output_tokens": 392,
+    "actions_applied": 0,
+    "actions_rejected_by_twin": 0,
+    "guards": false,
+    "actions_auto_undone": 0,
+    "blocked_by_precondition": 0,
+    "blocked_by_drift": 0,
+    "rounds": [
+      {
+        "round_no": 1,
+        "snapshot_label": "agent-S5_xai_only_r4-r1",
+        "snapshot_fingerprint": "78f465bb3f76bfd9",
+        "snapshot": {
+          "label": "agent-S5_xai_only_r4-r1",
+          "namespace": "default",
+          "taken_at": 1791409320.4883075,
+          "taken_at_human": "2026-10-07 21:42:00",
+          "fingerprint": "78f465bb3f76bfd9",
+          "span_count": 2080,
+          "edge_sources": {
+            "server_span": 6,
+            "ip": 8
+          },
+          "runtime_graph": {
+            "kind": "runtime",
+            "nodes": [
+              "adservice",
+              "cartservice",
+              "checkoutservice",
+              "currencyservice",
+              "emailservice",
+              "frontend",
+              "paymentservice",
+              "productcatalogservice",
+              "recommendationservice",
+              "shippingservice"
+            ],
+            "edges": [
+              {
+                "source": "checkoutservice",
+                "target": "cartservice",
+                "calls": 28,
+                "errors": 0,
+                "total_us": 36833,
+                "max_us": 1898,
+                "how": "ip",
+                "avg_ms": 1.32,
+                "max_ms": 1.9,
+                "error_rate": 0.0
+              },
+              {
+                "source": "checkoutservice",
+                "target": "currencyservice",
+                "calls": 27,
+                "errors": 0,
+                "total_us": 46691,
+                "max_us": 3009,
+                "how": "ip",
+                "avg_ms": 1.73,
+                "max_ms": 3.01,
+                "error_rate": 0.0
+              },
+              {
+                "source": "checkoutservice",
+                "target": "emailservice",
+                "calls": 14,
+                "errors": 0,
+                "total_us": 40454,
+                "max_us": 6346,
+                "how": "server_span",
+                "avg_ms": 2.89,
+                "max_ms": 6.35,
+                "error_rate": 0.0
+              },
+              {
+                "source": "checkoutservice",
+                "target": "paymentservice",
+                "calls": 14,
+                "errors": 0,
+                "total_us": 22226,
+                "max_us": 2861,
+                "how": "ip",
+                "avg_ms": 1.59,
+                "max_ms": 2.86,
+                "error_rate": 0.0
+              },
+              {
+                "source": "checkoutservice",
+                "target": "productcatalogservice",
+                "calls": 49,
+                "errors": 0,
+                "total_us": 4249644,
+                "max_us": 198531,
+                "how": "server_span",
+                "avg_ms": 86.73,
+                "max_ms": 198.53,
+                "error_rate": 0.0
+              },
+              {
+                "source": "checkoutservice",
+                "target": "shippingservice",
+                "calls": 28,
+                "errors": 0,
+                "total_us": 25814,
+                "max_us": 3827,
+                "how": "ip",
+                "avg_ms": 0.92,
+                "max_ms": 3.83,
+                "error_rate": 0.0
+              },
+              {
+                "source": "frontend",
+                "target": "adservice",
+                "calls": 41,
+                "errors": 0,
+                "total_us": 45949,
+                "max_us": 3010,
+                "how": "ip",
+                "avg_ms": 1.12,
+                "max_ms": 3.01,
+                "error_rate": 0.0
+              },
+              {
+                "source": "frontend",
+                "target": "cartservice",
+                "calls": 64,
+                "errors": 0,
+                "total_us": 89254,
+                "max_us": 6009,
+                "how": "ip",
+                "avg_ms": 1.39,
+                "max_ms": 6.01,
+                "error_rate": 0.0
+              },
+              {
+                "source": "frontend",
+                "target": "checkoutservice",
+                "calls": 14,
+                "errors": 0,
+                "total_us": 4711097,
+                "max_us": 548641,
+                "how": "server_span",
+                "avg_ms": 336.51,
+                "max_ms": 548.64,
+                "error_rate": 0.0
+              },
+              {
+                "source": "frontend",
+                "target": "currencyservice",
+                "calls": 203,
+                "errors": 0,
+                "total_us": 341408,
+                "max_us": 5479,
+                "how": "ip",
+                "avg_ms": 1.68,
+                "max_ms": 5.48,
+                "error_rate": 0.0
+              },
+              {
+                "source": "frontend",
+                "target": "productcatalogservice",
+                "calls": 420,
+                "errors": 0,
+                "total_us": 29144063,
+                "max_us": 300145,
+                "how": "server_span",
+                "avg_ms": 69.39,
+                "max_ms": 300.14,
+                "error_rate": 0.0
+              },
+              {
+                "source": "frontend",
+                "target": "recommendationservice",
+                "calls": 67,
+                "errors": 0,
+                "total_us": 4737867,
+                "max_us": 359259,
+                "how": "server_span",
+                "avg_ms": 70.71,
+                "max_ms": 359.26,
+                "error_rate": 0.0
+              },
+              {
+                "source": "frontend",
+                "target": "shippingservice",
+                "calls": 16,
+                "errors": 0,
+                "total_us": 10693,
+                "max_us": 839,
+                "how": "ip",
+                "avg_ms": 0.67,
+                "max_ms": 0.84,
+                "error_rate": 0.0
+              },
+              {
+                "source": "recommendationservice",
+                "target": "productcatalogservice",
+                "calls": 61,
+                "errors": 0,
+                "total_us": 4112849,
+                "max_us": 353925,
+                "how": "server_span",
+                "avg_ms": 67.42,
+                "max_ms": 353.93,
+                "error_rate": 0.0
+              }
+            ]
+          },
+          "diff": {
+            "missing_edges": [],
+            "unexpected_edges": [],
+            "error_edges": [],
+            "slow_edges": [
+              {
+                "source": "checkoutservice",
+                "target": "productcatalogservice",
+                "detail": "trung binh 86.73ms, luc khoe manh 0.64ms (cham gap 135.5 lan)",
+                "on_critical_path": true
+              },
+              {
+                "source": "frontend",
+                "target": "checkoutservice",
+                "detail": "trung binh 336.51ms, luc khoe manh 15.96ms (cham gap 21.1 lan)",
+                "on_critical_path": true
+              },
+              {
+                "source": "frontend",
+                "target": "productcatalogservice",
+                "detail": "trung binh 69.39ms, luc khoe manh 0.97ms (cham gap 71.5 lan)",
+                "on_critical_path": true
+              },
+              {
+                "source": "frontend",
+                "target": "recommendationservice",
+                "detail": "trung binh 70.71ms, luc khoe manh 4.08ms (cham gap 17.3 lan)",
+                "on_critical_path": false
+              },
+              {
+                "source": "recommendationservice",
+                "target": "productcatalogservice",
+                "detail": "trung binh 67.42ms, luc khoe manh 1.93ms (cham gap 34.9 lan)",
+                "on_critical_path": false
+              }
+            ],
+            "silent_services": [],
+            "throughput_ratio": 0.978
+          },
+          "red": {
+            "cartservice": {
+              "service": "cartservice",
+              "request_rate": 2.3965,
+              "error_rate": 0.0,
+              "p50_ms": NaN,
+              "p95_ms": 4.27,
+              "source": "client"
+            },
+            "currencyservice": {
+              "service": "currencyservice",
+              "request_rate": 7.5158,
+              "error_rate": 0.0,
+              "p50_ms": 0.25,
+              "p95_ms": 0.48,
+              "source": "server"
+            },
+            "productcatalogservice": {
+              "service": "productcatalogservice",
+              "request_rate": 13.4701,
+              "error_rate": 0.0,
+              "p50_ms": 0.26,
+              "p95_ms": 0.49,
+              "source": "server"
+            },
+            "adservice": {
+              "service": "adservice",
+              "request_rate": 1.4105,
+              "error_rate": 0.0,
+              "p50_ms": NaN,
+              "p95_ms": 2.31,
+              "source": "client"
+            },
+            "recommendationservice": {
+              "service": "recommendationservice",
+              "request_rate": 1.7719,
+              "error_rate": 0.0,
+              "p50_ms": 57.33,
+              "p95_ms": 228.66,
+              "source": "server"
+            },
+            "emailservice": {
+              "service": "emailservice",
+              "request_rate": 0.0561,
+              "error_rate": 0.0,
+              "p50_ms": 0.27,
+              "p95_ms": 0.6,
+              "source": "server"
+            },
+            "paymentservice": {
+              "service": "paymentservice",
+              "request_rate": 0.0561,
+              "error_rate": 0.0,
+              "p50_ms": 0.25,
+              "p95_ms": 0.47,
+              "source": "server"
+            },
+            "shippingservice": {
+              "service": "shippingservice",
+              "request_rate": 0.6842,
+              "error_rate": 0.0,
+              "p50_ms": NaN,
+              "p95_ms": 2.2,
+              "source": "client"
+            },
+            "checkoutservice": {
+              "service": "checkoutservice",
+              "request_rate": 0.0561,
+              "error_rate": 0.0,
+              "p50_ms": 343.75,
+              "p95_ms": 866.67,
+              "source": "server"
+            },
+            "frontend": {
+              "service": "frontend",
+              "request_rate": 2.6912,
+              "error_rate": 0.0,
+              "p50_ms": 339.5,
+              "p95_ms": 988.95,
+              "source": "server"
+            },
+            "twin-frontend": {
+              "service": "twin-frontend",
+              "request_rate": 0.0,
+              "error_rate": 0.0,
+              "p50_ms": NaN,
+              "p95_ms": NaN,
+              "source": "server"
+            },
+            "twin-currencyservice": {
+              "service": "twin-currencyservice",
+              "request_rate": 0.0,
+              "error_rate": 0.0,
+              "p50_ms": NaN,
+              "p95_ms": NaN,
+              "source": "server"
+            },
+            "twin-productcatalogservice": {
+              "service": "twin-productcatalogservice",
+              "request_rate": 0.0,
+              "error_rate": 0.0,
+              "p50_ms": NaN,
+              "p95_ms": NaN,
+              "source": "server"
+            },
+            "twin-recommendationservice": {
+              "service": "twin-recommendationservice",
+              "request_rate": 0.0,
+              "error_rate": 0.0,
+              "p50_ms": NaN,
+              "p95_ms": NaN,
+              "source": "server"
+            },
+            "twin-emailservice": {
+              "service": "twin-emailservice",
+              "request_rate": 0.0,
+              "error_rate": 0.0,
+              "p50_ms": NaN,
+              "p95_ms": NaN,
+              "source": "server"
+            },
+            "twin-paymentservice": {
+              "service": "twin-paymentservice",
+              "request_rate": 0.0,
+              "error_rate": 0.0,
+              "p50_ms": NaN,
+              "p95_ms": NaN,
+              "source": "server"
+            },
+            "twin-checkoutservice": {
+              "service": "twin-checkoutservice",
+              "request_rate": 0.0,
+              "error_rate": 0.0,
+              "p50_ms": NaN,
+              "p95_ms": NaN,
+              "source": "server"
+            }
+          },
+          "resources": {
+            "adservice-748f6f68d4-lz5vq": {
+              "pod": "adservice-748f6f68d4-lz5vq",
+              "cpu_cores": 0.0015,
+              "memory_bytes": 137994240.0
+            },
+            "cartservice-9479b6c-z8xq5": {
+              "pod": "cartservice-9479b6c-z8xq5",
+              "cpu_cores": 0.0065,
+              "memory_bytes": 90984448.0
+            },
+            "checkoutservice-777dff667-sj6rs": {
+              "pod": "checkoutservice-777dff667-sj6rs",
+              "cpu_cores": 0.0012,
+              "memory_bytes": 8413184.0
+            },
+            "currencyservice-f68cbbddb-x48sz": {
+              "pod": "currencyservice-f68cbbddb-x48sz",
+              "cpu_cores": 0.0133,
+              "memory_bytes": 51773440.0
+            },
+            "emailservice-5774686b8c-7slmk": {
+              "pod": "emailservice-5774686b8c-7slmk",
+              "cpu_cores": 0.0025,
+              "memory_bytes": 58425344.0
+            },
+            "frontend-769f5c8747-sdpvm": {
+              "pod": "frontend-769f5c8747-sdpvm",
+              "cpu_cores": 0.0192,
+              "memory_bytes": 14659584.0
+            },
+            "jaeger-6df44bd545-9wj55": {
+              "pod": "jaeger-6df44bd545-9wj55",
+              "cpu_cores": 0.0022,
+              "memory_bytes": 208924672.0
+            },
+            "loadgenerator-66db5f8bf7-nlkhh": {
+              "pod": "loadgenerator-66db5f8bf7-nlkhh",
+              "cpu_cores": 0.0059,
+              "memory_bytes": 111464448.0
+            },
+            "mon-grafana-77bbccd7db-bvnvd": {
+              "pod": "mon-grafana-77bbccd7db-bvnvd",
+              "cpu_cores": 0.0174,
+              "memory_bytes": 527486976.0
+            },
+            "mon-kube-prometheus-stack-operator-7b54bcf886-r847w": {
+              "pod": "mon-kube-prometheus-stack-operator-7b54bcf886-r847w",
+              "cpu_cores": 0.0038,
+              "memory_bytes": 83398656.0
+            },
+            "mon-kube-state-metrics-6c58df44f8-7cq5k": {
+              "pod": "mon-kube-state-metrics-6c58df44f8-7cq5k",
+              "cpu_cores": 0.0009,
+              "memory_bytes": 74276864.0
+            },
+            "mon-prometheus-node-exporter-kvrg9": {
+              "pod": "mon-prometheus-node-exporter-kvrg9",
+              "cpu_cores": 0.0025,
+              "memory_bytes": 26480640.0
+            },
+            "opentelemetrycollector-858cc569-7mhbl": {
+              "pod": "opentelemetrycollector-858cc569-7mhbl",
+              "cpu_cores": 0.0076,
+              "memory_bytes": 283361280.0
+            },
+            "paymentservice-7c7876fcd9-2q8gj": {
+              "pod": "paymentservice-7c7876fcd9-2q8gj",
+              "cpu_cores": 0.0009,
+              "memory_bytes": 112496640.0
+            },
+            "productcatalogservice-5d9ffc7bc8-wc2z7": {
+              "pod": "productcatalogservice-5d9ffc7bc8-wc2z7",
+              "cpu_cores": 0.0076,
+              "memory_bytes": 10166272.0
+            },
+            "prometheus-mon-kube-prometheus-stack-prometheus-0": {
+              "pod": "prometheus-mon-kube-prometheus-stack-prometheus-0",
+              "cpu_cores": 0.0316,
+              "memory_bytes": 686538752.0
+            },
+            "recommendationservice-6b576f5f98-jc5mr": {
+              "pod": "recommendationservice-6b576f5f98-jc5mr",
+              "cpu_cores": 0.0148,
+              "memory_bytes": 36286464.0
+            },
+            "redis-cart-788fbddc7-l9cjk": {
+              "pod": "redis-cart-788fbddc7-l9cjk",
+              "cpu_cores": 0.0027,
+              "memory_bytes": 30498816.0
+            },
+            "shippingservice-768bf5c46b-xwjvv": {
+              "pod": "shippingservice-768bf5c46b-xwjvv",
+              "cpu_cores": 0.001,
+              "memory_bytes": 24133632.0
+            }
+          },
+          "cpu": {
+            "cartservice-9479b6c-z8xq5": {
+              "used_cores": 0.0065,
+              "limit_cores": 0.3,
+              "ratio": 0.022
+            },
+            "recommendationservice-6b576f5f98-jc5mr": {
+              "used_cores": 0.0148,
+              "limit_cores": 0.2,
+              "ratio": 0.074
+            },
+            "loadgenerator-66db5f8bf7-nlkhh": {
+              "used_cores": 0.0059,
+              "limit_cores": 0.5,
+              "ratio": 0.012
+            },
+            "shippingservice-768bf5c46b-xwjvv": {
+              "used_cores": 0.001,
+              "limit_cores": 0.2,
+              "ratio": 0.005
+            },
+            "adservice-748f6f68d4-lz5vq": {
+              "used_cores": 0.0015,
+              "limit_cores": 0.3,
+              "ratio": 0.005
+            },
+            "redis-cart-788fbddc7-l9cjk": {
+              "used_cores": 0.0027,
+              "limit_cores": 0.125,
+              "ratio": 0.022
+            },
+            "emailservice-5774686b8c-7slmk": {
+              "used_cores": 0.0025,
+              "limit_cores": 0.2,
+              "ratio": 0.013
+            },
+            "paymentservice-7c7876fcd9-2q8gj": {
+              "used_cores": 0.0009,
+              "limit_cores": 0.2,
+              "ratio": 0.005
+            },
+            "frontend-769f5c8747-sdpvm": {
+              "used_cores": 0.0192,
+              "limit_cores": 0.2,
+              "ratio": 0.096
+            },
+            "checkoutservice-777dff667-sj6rs": {
+              "used_cores": 0.0012,
+              "limit_cores": 0.2,
+              "ratio": 0.006
+            },
+            "currencyservice-f68cbbddb-x48sz": {
+              "used_cores": 0.0133,
+              "limit_cores": 0.2,
+              "ratio": 0.067
+            },
+            "productcatalogservice-5d9ffc7bc8-wc2z7": {
+              "used_cores": 0.0076,
+              "limit_cores": 0.01,
+              "ratio": 0.763
+            }
+          },
+          "pods": [
+            {
+              "name": "adservice-748f6f68d4-lz5vq",
+              "deployment": "adservice",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 1,
+              "reason": "",
+              "last_restart_age_s": 115082.6,
+              "age_s": 128881.6
+            },
+            {
+              "name": "cartservice-9479b6c-z8xq5",
+              "deployment": "cartservice",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 1,
+              "reason": "",
+              "last_restart_age_s": 115082.6,
+              "age_s": 128622.6
+            },
+            {
+              "name": "checkoutservice-777dff667-sj6rs",
+              "deployment": "checkoutservice",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 0,
+              "reason": "",
+              "last_restart_age_s": null,
+              "age_s": 2824.6
+            },
+            {
+              "name": "currencyservice-f68cbbddb-x48sz",
+              "deployment": "currencyservice",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 0,
+              "reason": "",
+              "last_restart_age_s": null,
+              "age_s": 1882.6
+            },
+            {
+              "name": "emailservice-5774686b8c-7slmk",
+              "deployment": "emailservice",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 1,
+              "reason": "",
+              "last_restart_age_s": 113111.6,
+              "age_s": 128881.6
+            },
+            {
+              "name": "frontend-769f5c8747-sdpvm",
+              "deployment": "frontend",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 0,
+              "reason": "",
+              "last_restart_age_s": null,
+              "age_s": 3430.6
+            },
+            {
+              "name": "jaeger-6df44bd545-9wj55",
+              "deployment": "jaeger",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 1,
+              "reason": "",
+              "last_restart_age_s": 115082.6,
+              "age_s": 128881.6
+            },
+            {
+              "name": "loadgenerator-66db5f8bf7-nlkhh",
+              "deployment": "loadgenerator",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 1,
+              "reason": "",
+              "last_restart_age_s": 115082.6,
+              "age_s": 128881.6
+            },
+            {
+              "name": "mon-grafana-77bbccd7db-bvnvd",
+              "deployment": "",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 3,
+              "reason": "",
+              "last_restart_age_s": 115081.6,
+              "age_s": 128802.6
+            },
+            {
+              "name": "mon-kube-prometheus-stack-operator-7b54bcf886-r847w",
+              "deployment": "kube-prometheus-stack-operator",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 1,
+              "reason": "",
+              "last_restart_age_s": 115082.6,
+              "age_s": 128802.6
+            },
+            {
+              "name": "mon-kube-state-metrics-6c58df44f8-7cq5k",
+              "deployment": "",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 1,
+              "reason": "",
+              "last_restart_age_s": 115082.6,
+              "age_s": 128802.6
+            },
+            {
+              "name": "mon-prometheus-node-exporter-kvrg9",
+              "deployment": "",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 1,
+              "reason": "",
+              "last_restart_age_s": 115081.6,
+              "age_s": 128802.6
+            },
+            {
+              "name": "opentelemetrycollector-858cc569-7mhbl",
+              "deployment": "opentelemetrycollector",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 1,
+              "reason": "",
+              "last_restart_age_s": 113111.6,
+              "age_s": 128881.6
+            },
+            {
+              "name": "paymentservice-7c7876fcd9-2q8gj",
+              "deployment": "paymentservice",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 1,
+              "reason": "",
+              "last_restart_age_s": 113111.6,
+              "age_s": 128880.6
+            },
+            {
+              "name": "productcatalogservice-5d9ffc7bc8-wc2z7",
+              "deployment": "productcatalogservice",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 0,
+              "reason": "",
+              "last_restart_age_s": null,
+              "age_s": 332.6
+            },
+            {
+              "name": "prometheus-mon-kube-prometheus-stack-prometheus-0",
+              "deployment": "",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 2,
+              "reason": "",
+              "last_restart_age_s": 115082.6,
+              "age_s": 128794.6
+            },
+            {
+              "name": "recommendationservice-6b576f5f98-jc5mr",
+              "deployment": "recommendationservice",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 7,
+              "reason": "",
+              "last_restart_age_s": 113077.6,
+              "age_s": 128880.6
+            },
+            {
+              "name": "redis-cart-788fbddc7-l9cjk",
+              "deployment": "redis-cart",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 1,
+              "reason": "",
+              "last_restart_age_s": 115082.6,
+              "age_s": 128879.6
+            },
+            {
+              "name": "shippingservice-768bf5c46b-xwjvv",
+              "deployment": "shippingservice",
+              "phase": "Running",
+              "ready": true,
+              "restarts": 1,
+              "reason": "",
+              "last_restart_age_s": 115083.6,
+              "age_s": 128879.6
+            }
+          ]
+        },
+        "prompt_text": "SYSTEM DESIGN (expected topology):\n  cartservice -> redis-cart\n  checkoutservice -> cartservice, currencyservice, emailservice, paymentservice, productcatalogservice, shippingservice\n  frontend -> adservice, cartservice, checkoutservice, currencyservice, productcatalogservice, recommendationservice, shippingservice\n  loadgenerator -> frontend\n  recommendationservice -> productcatalogservice\n\nOBSERVABILITY LIMITS (important when reading the data below):\n  These services emit NO traces of their own: adservice, cartservice, loadgenerator, redis-cart, shippingservice.\n  Their latency and error rate are measured indirectly from the caller side, so the numbers include network time and are slightly higher than reality.\n  redis-cart is completely invisible: no data at all does NOT mean it is down.\n  Critical business path: frontend -> productcatalogservice -> cartservice -> checkoutservice -> paymentservice\n\nDEVIATIONS FROM DESIGN (strongest signal, read this first):\n  SLOW calls:\n    checkoutservice -> productcatalogservice: trung binh 86.73ms, luc khoe manh 0.64ms (cham gap 135.5 lan) [ON CRITICAL PATH]\n    frontend -> checkoutservice: trung binh 336.51ms, luc khoe manh 15.96ms (cham gap 21.1 lan) [ON CRITICAL PATH]\n    frontend -> productcatalogservice: trung binh 69.39ms, luc khoe manh 0.97ms (cham gap 71.5 lan) [ON CRITICAL PATH]\n    frontend -> recommendationservice: trung binh 70.71ms, luc khoe manh 4.08ms (cham gap 17.3 lan)\n    recommendationservice -> productcatalogservice: trung binh 67.42ms, luc khoe manh 1.93ms (cham gap 34.9 lan)\n\nSERVICE METRICS (rate / errors / latency):\n  productcatalogservice: 13.47 req/s, 0.0% errors, p95 0.49ms\n  currencyservice: 7.52 req/s, 0.0% errors, p95 0.48ms\n  frontend: 2.69 req/s, 0.0% errors, p95 988.95ms\n  cartservice: 2.40 req/s, 0.0% errors, p95 4.27ms [measured from caller side]\n  recommendationservice: 1.77 req/s, 0.0% errors, p95 228.66ms\n  adservice: 1.41 req/s, 0.0% errors, p95 2.31ms [measured from caller side]\n  shippingservice: 0.68 req/s, 0.0% errors, p95 2.2ms [measured from caller side]\n  emailservice: 0.06 req/s, 0.0% errors, p95 0.6ms\n  paymentservice: 0.06 req/s, 0.0% errors, p95 0.47ms\n  checkoutservice: 0.06 req/s, 0.0% errors, p95 866.67ms\n  twin-frontend: 0.00 req/s, 0.0% errors, p95 n/a\n  twin-currencyservice: 0.00 req/s, 0.0% errors, p95 n/a\n  twin-productcatalogservice: 0.00 req/s, 0.0% errors, p95 n/a\n  twin-recommendationservice: 0.00 req/s, 0.0% errors, p95 n/a\n  twin-emailservice: 0.00 req/s, 0.0% errors, p95 n/a\n  twin-paymentservice: 0.00 req/s, 0.0% errors, p95 n/a\n  twin-checkoutservice: 0.00 req/s, 0.0% errors, p95 n/a\n\nCPU USAGE vs LIMIT (ratio near 1.0 means the service is CPU-throttled):\n  productcatalogservice: using 0.008 of 0.010 cores (76% of limit)  <-- AT LIMIT\n  frontend: using 0.019 of 0.200 cores (10% of limit)\n  recommendationservice: using 0.015 of 0.200 cores (7% of limit)\n  checkoutservice: using 0.001 of 0.200 cores (1% of limit)\n\nOBSERVED CALL GRAPH (last observation window):\n  frontend -> productcatalogservice: 420 calls, 0.0% errors, avg 69.39ms, max 300.14ms\n  frontend -> currencyservice: 203 calls, 0.0% errors, avg 1.68ms, max 5.48ms\n  frontend -> recommendationservice: 67 calls, 0.0% errors, avg 70.71ms, max 359.26ms\n  frontend -> cartservice: 64 calls, 0.0% errors, avg 1.39ms, max 6.01ms\n  recommendationservice -> productcatalogservice: 61 calls, 0.0% errors, avg 67.42ms, max 353.93ms\n  checkoutservice -> productcatalogservice: 49 calls, 0.0% errors, avg 86.73ms, max 198.53ms\n  frontend -> adservice: 41 calls, 0.0% errors, avg 1.12ms, max 3.01ms\n  checkoutservice -> shippingservice: 28 calls, 0.0% errors, avg 0.92ms, max 3.83ms\n  checkoutservice -> cartservice: 28 calls, 0.0% errors, avg 1.32ms, max 1.9ms\n  checkoutservice -> currencyservice: 27 calls, 0.0% errors, avg 1.73ms, max 3.01ms\n  frontend -> shippingservice: 16 calls, 0.0% errors, avg 0.67ms, max 0.84ms\n  checkoutservice -> emailservice: 14 calls, 0.0% errors, avg 2.89ms, max 6.35ms\n  frontend -> checkoutservice: 14 calls, 0.0% errors, avg 336.51ms, max 548.64ms\n  checkoutservice -> paymentservice: 14 calls, 0.0% errors, avg 1.59ms, max 2.86ms\n\nPOD HEALTH:\n  productcatalogservice-5d9ffc7bc8-wc2z7: phase=Running, ready=True, reason=n/a, pod was RECREATED 333s ago (previous pod is gone)\n\nPOD RESOURCES (top consumers):\n  adservice-748f6f68d4-lz5vq: cpu 0.002 cores, mem 132Mi\n  paymentservice-7c7876fcd9-2q8gj: cpu 0.001 cores, mem 107Mi\n  cartservice-9479b6c-z8xq5: cpu 0.006 cores, mem 87Mi\n  emailservice-5774686b8c-7slmk: cpu 0.003 cores, mem 56Mi\n  currencyservice-f68cbbddb-x48sz: cpu 0.013 cores, mem 49Mi\n  recommendationservice-6b576f5f98-jc5mr: cpu 0.015 cores, mem 35Mi\n  redis-cart-788fbddc7-l9cjk: cpu 0.003 cores, mem 29Mi\n  shippingservice-768bf5c46b-xwjvv: cpu 0.001 cores, mem 23Mi",
+        "diff_summary": "0 canh loi, 5 canh cham, 0 canh thieu",
+        "healthy": false,
+        "observed_at": 1791409320.4883075,
+        "red": {
+          "cartservice": {
+            "request_rate": 2.3965,
+            "error_rate": 0.0,
+            "p95_ms": 4.27,
+            "source": "client"
+          },
+          "currencyservice": {
+            "request_rate": 7.5158,
+            "error_rate": 0.0,
+            "p95_ms": 0.48,
+            "source": "server"
+          },
+          "productcatalogservice": {
+            "request_rate": 13.4701,
+            "error_rate": 0.0,
+            "p95_ms": 0.49,
+            "source": "server"
+          },
+          "adservice": {
+            "request_rate": 1.4105,
+            "error_rate": 0.0,
+            "p95_ms": 2.31,
+            "source": "client"
+          },
+          "recommendationservice": {
+            "request_rate": 1.7719,
+            "error_rate": 0.0,
+            "p95_ms": 228.66,
+            "source": "server"
+          },
+          "emailservice": {
+            "request_rate": 0.0561,
+            "error_rate": 0.0,
+            "p95_ms": 0.6,
+            "source": "server"
+          },
+          "paymentservice": {
+            "request_rate": 0.0561,
+            "error_rate": 0.0,
+            "p95_ms": 0.47,
+            "source": "server"
+          },
+          "shippingservice": {
+            "request_rate": 0.6842,
+            "error_rate": 0.0,
+            "p95_ms": 2.2,
+            "source": "client"
+          },
+          "checkoutservice": {
+            "request_rate": 0.0561,
+            "error_rate": 0.0,
+            "p95_ms": 866.67,
+            "source": "server"
+          },
+          "frontend": {
+            "request_rate": 2.6912,
+            "error_rate": 0.0,
+            "p95_ms": 988.95,
+            "source": "server"
+          }
+        },
+        "reasoning_ran": true,
+        "explanation": {
+          "root_cause_service": "productcatalogservice",
+          "fault_type": "resource_exhaustion",
+          "confidence": 0.9,
+          "reasoning_chain": [
+            "Multiple callers (frontend, checkoutservice, recommendationservice) show slow calls converging on productcatalogservice.",
+            "productcatalogservice's own p95 latency is low (0.49ms), indicating it is not slow processing requests but requests queue before CPU.",
+            "CPU usage of productcatalogservice is 0.008 of 0.010 cores, which is 76% of its CPU limit, indicating CPU throttling and resource exhaustion.",
+            "checkoutservice and frontend show high latency on calls to productcatalogservice, propagating the delay upstream.",
+            "productcatalogservice pod was recreated 333s ago, so it is stable now and not a pod_kill or crash.",
+            "No errors are observed on productcatalogservice or its callers, consistent with latency due to resource exhaustion rather than failure."
+          ],
+          "propagation_path": [
+            "checkoutservice",
+            "frontend",
+            "recommendationservice"
+          ],
+          "evidence": [
+            "checkoutservice -> productcatalogservice: avg 86.73ms vs p95 0.49ms on productcatalogservice",
+            "frontend -> productcatalogservice: avg 69.39ms vs p95 0.49ms on productcatalogservice",
+            "recommendationservice -> productcatalogservice: avg 67.42ms vs p95 0.49ms on productcatalogservice",
+            "productcatalogservice CPU usage 0.008 of 0.010 cores (76% limit)",
+            "productcatalogservice pod was RECREATED 333s ago and is ready"
+          ],
+          "proposed_actions": [
+            {
+              "action": "adjust_resources",
+              "target": "productcatalogservice",
+              "params": [
+                {
+                  "key": "cpu_limit",
+                  "value": "20m"
+                }
+              ],
+              "preconditions": [
+                {
+                  "kind": "pods_ready_gte",
+                  "target": "productcatalogservice",
+                  "value": "1"
+                }
+              ],
+              "risk_class": "medium",
+              "rationale": "Increasing CPU limit will reduce CPU throttling and resource exhaustion causing latency."
+            }
+          ]
+        },
+        "reasoning_ok": true,
+        "reasoning_error": "",
+        "input_tokens": 4282,
+        "output_tokens": 392,
+        "chosen_action": {
+          "action": "adjust_resources",
+          "target": "productcatalogservice",
+          "params": [
+            {
+              "key": "cpu_limit",
+              "value": "20m"
+            }
+          ],
+          "preconditions": [
+            {
+              "kind": "pods_ready_gte",
+              "target": "productcatalogservice",
+              "value": "1"
+            }
+          ],
+          "risk_class": "medium",
+          "rationale": "Increasing CPU limit will reduce CPU throttling and resource exhaustion causing latency."
+        },
+        "risk_class": "medium",
+        "twin_verdict": null,
+        "twin_used": false,
+        "action_result": null,
+        "promoted": false,
+        "prod_before": {},
+        "prod_after": {},
+        "prod_verdict": null,
+        "prod_error": "",
+        "auto_undo": null,
+        "auto_undone": false,
+        "state_seen": {},
+        "drift_checked": false,
+        "drift": [],
+        "preconditions": [],
+        "blocked_by": "",
+        "skipped_reason": "",
+        "started_at": 1791409318.8722763,
+        "took_s": 6.46
+      }
+    ],
+    "saved_to": "/home/ubuntu/XAI-microservices-demo/data/agent_runs/20261007-214205_xai_only_S5_xai_only_r4.json"
+  },
+  "final_red": {
+    "cartservice": {
+      "request_rate": 2.3965,
+      "error_rate": 0.0,
+      "p95_ms": 4.27,
+      "source": "client"
+    },
+    "currencyservice": {
+      "request_rate": 7.5158,
+      "error_rate": 0.0,
+      "p95_ms": 0.48,
+      "source": "server"
+    },
+    "productcatalogservice": {
+      "request_rate": 13.7716,
+      "error_rate": 0.0,
+      "p95_ms": 0.49,
+      "source": "server"
+    },
+    "adservice": {
+      "request_rate": 1.4105,
+      "error_rate": 0.0,
+      "p95_ms": 2.31,
+      "source": "client"
+    },
+    "recommendationservice": {
+      "request_rate": 1.7719,
+      "error_rate": 0.0,
+      "p95_ms": 228.66,
+      "source": "server"
+    },
+    "emailservice": {
+      "request_rate": 0.0561,
+      "error_rate": 0.0,
+      "p95_ms": 0.6,
+      "source": "server"
+    },
+    "paymentservice": {
+      "request_rate": 0.0561,
+      "error_rate": 0.0,
+      "p95_ms": 0.47,
+      "source": "server"
+    },
+    "shippingservice": {
+      "request_rate": 0.6842,
+      "error_rate": 0.0,
+      "p95_ms": 2.2,
+      "source": "client"
+    },
+    "checkoutservice": {
+      "request_rate": 0.0561,
+      "error_rate": 0.0,
+      "p95_ms": 866.67,
+      "source": "server"
+    },
+    "frontend": {
+      "request_rate": 2.6912,
+      "error_rate": 0.0,
+      "p95_ms": 988.95,
+      "source": "server"
+    }
+  },
+  "outcome": {
+    "scenario": "S5",
+    "mode": "xai_only",
+    "repeat": 4,
+    "run_id": "S5_xai_only_r4",
+    "root_cause_correct": true,
+    "propagation_jaccard": 1.0,
+    "fault_type_correct": true,
+    "action_correct": true,
+    "predicted_root": "productcatalogservice",
+    "expected_root": "productcatalogservice",
+    "recovered": false,
+    "mttr_s": null,
+    "censored_at_s": 336.5,
+    "harmful_actions": 0,
+    "wasted_actions": 0,
+    "helpful_actions": 0,
+    "unknown_effect_actions": 0,
+    "action_effects": [],
+    "rounds_used": 1,
+    "input_tokens": 4282,
+    "output_tokens": 392,
+    "cost_usd": 0.00234,
+    "took_s": 6.46,
+    "actions_rejected_by_twin": 0,
+    "actions_auto_undone": 0,
+    "blocked_by_precondition": 0,
+    "blocked_by_drift": 0,
+    "drift_checks": 0,
+    "twin_better": 0,
+    "twin_transfer_ok": 0,
+    "notes": [
+      "khong hoi phuc — ca nay bi cat cut, dung nhet vao trung binh MTTR"
+    ]
+  },
+  "cleanup": {
+    "agent_undos": [],
+    "fault_revert": [
+      {
+        "fault_id": "F4-productcatalogservice-cpu",
+        "target": "productcatalogservice",
+        "ready": true
+      }
+    ],
+    "clean_after": true,
+    "problems_after": []
+  }
+}
