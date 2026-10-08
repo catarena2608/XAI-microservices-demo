@@ -2,6 +2,7 @@
 
   python scripts/transient_check.py                       # S4 + restart_pod
   python scripts/transient_check.py --scenario S1 --action rollback
+  python scripts/transient_check.py --scenario S1 --action adjust_resources --param cpu_limit=400m
   python scripts/transient_check.py --dry-run             # in ke hoach, khong dung cluster
 
 VI SAO CAN SCRIPT NAY:
@@ -50,7 +51,7 @@ from src_thesis.eval.preflight import wait_for_clean_baseline
 from src_thesis.faults.injectors import FaultInjector, load_active_faults
 from src_thesis.faults.library import inject_scenario, load_scenarios, wait_seconds
 from src_thesis.k8s_client import K8sClient
-from src_thesis.xai.schema import ProposedAction
+from src_thesis.xai.schema import ActionParam, ProposedAction
 
 RESULTS_DIR = Path(__file__).resolve().parents[1] / "data" / "fidelity"
 
@@ -96,6 +97,11 @@ def main() -> int:
     ap.add_argument("--action", default="restart_pod", help="hanh dong can kiem")
     ap.add_argument("--target", default=None,
                     help="de trong thi lay target cua kich ban")
+    # Khong co tham so thi adjust_resources dat tran ve DEFAULT_CPU_LIMIT (200m) — dung
+    # bang tran san co cua phan lon service, tuc la KHONG lam gi va script dung giua
+    # chung. Phai truyen dung tham so ma LLM da de xuat thi moi do dung hanh dong do.
+    ap.add_argument("--param", action="append", default=[], metavar="KEY=VALUE",
+                    help="tham so cua hanh dong, lap lai duoc, vi du cpu_limit=400m")
     ap.add_argument("--window", type=int, default=WINDOW_SECONDS,
                     help=f"do dai mot cua so, mac dinh {WINDOW_SECONDS}s")
     ap.add_argument("--dry-run", action="store_true",
@@ -112,10 +118,19 @@ def main() -> int:
         print(f"Kich ban {args.scenario} khong co target don le, phai dat --target.")
         return 1
 
+    params = []
+    for kv in args.param:
+        if "=" not in kv:
+            print(f"--param phai co dang KEY=VALUE, nhan duoc '{kv}'")
+            return 1
+        k, v = kv.split("=", 1)
+        params.append(ActionParam(key=k.strip(), value=v.strip()))
+
     wait_inject = wait_seconds(spec)
     total = wait_inject + args.window * 2
     print(f"Kich ban : {args.scenario}  ({spec['fault']} vao {target})")
-    print(f"Hanh dong: {args.action} tren {target}")
+    print(f"Hanh dong: {args.action} tren {target}"
+          + (f"  ({', '.join(f'{x.key}={x.value}' for x in params)})" if params else ""))
     print(f"Ke hoach : tiem -> cho {wait_inject}s -> do T0 -> hanh dong")
     print(f"           -> cho {args.window}s -> do T1 -> cho {args.window}s -> do T2")
     print(f"Uoc tinh : {total // 60} phut do, cong thoi gian cho nen sach va hoan tac")
@@ -130,6 +145,7 @@ def main() -> int:
     executor = ActionExecutor(namespace="default")
     action_result = None
     record: dict = {"scenario": args.scenario, "action": args.action,
+                    "params": {x.key: x.value for x in params},
                     "target": target, "environment": "production",
                     "window_s": args.window, "started_at": time.time()}
 
@@ -148,7 +164,7 @@ def main() -> int:
 
         print(f"\nThi hanh {args.action} tren {target}...", flush=True)
         action_result = executor.apply(ProposedAction(
-            action=args.action, target=target, risk_class="hard",
+            action=args.action, target=target, risk_class="hard", params=params,
             rationale="kiem tra hanh dong co tot len ben khong"))
         print(f"  {action_result.detail}")
         if not action_result.applied:
