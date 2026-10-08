@@ -418,3 +418,45 @@ thi hành hành động → đo T1 sau 300 giây → đo T2 sau 300 giây nữa 
 
 Mỗi lần khoảng 20–25 phút, cả ba khoảng 70 phút. Không gọi LLM. Kết quả ghi vào
 `data/fidelity/<giờ>_transient_S1_<hành động>.json`.
+
+### 13. Kết quả đo S1 + `adjust_resources` (tăng CPU lên 400m)
+
+File trên k3s: `data/fidelity/20261008-012615_transient_S1_adjust_resources.json`.
+Hành động **đã thi hành thật**: "tran CPU 200m -> 400m (yeu cau 400m)". Sau khi đo, hệ
+thống đã được hoàn tác: `inject.py --status` báo sạch.
+
+| Thời điểm | frontend p95 / lỗi / req/s | productcatalogservice p95 | checkoutservice p95 |
+|---|---|---|---|
+| T0: sau tiêm, trước hành động | 30000 ms / 3,8% / 0,46 | **9750 ms** | 30000 ms |
+| T1: 300 giây sau hành động | 30000 ms / 27,5% / 0,64 | **9750 ms** | 27000 ms |
+| T2: 600 giây sau hành động | 30000 ms / 0,7% / 0,48 | **9750 ms** | 28500 ms |
+
+**Kết luận cho câu hỏi đang hỏi: tăng CPU KHÔNG gỡ được lỗi S1.**
+- p95 của chính service bị tiêm đứng yên ở 9750 ms ở cả ba lần đo, tức vẫn ngủ 6 giây mỗi
+  lần gọi. Đúng như suy ra từ code ở mục 12, giờ đã đo được.
+- Lỗi 27,5% ở T1 nhiều khả năng là do pod bị tạo lại vì đổi CPU, nằm trong cửa sổ đo đó.
+
+**Phát hiện phụ, quan trọng cho bước F: bộ xác minh có thể bị đánh lừa.**
+- `TwinVerifier.compare` ra phán quyết **T0 → T2: better**, lý do "ti le loi giam:
+  frontend 3.8% -> 0.7%", trong khi triệu chứng chính (độ trễ) không đổi chút nào.
+- Vì sao:
+  1. **Lỗi được xét trước độ trễ, theo ngưỡng tuyệt đối 2 điểm phần trăm.** Code ghi
+     ngưỡng này được thêm sau một lần chạy S1 trên k3s ngày 7/10, vì lúc đó lỗi tăng mạnh
+     mà phán quyết lại ra `no_change`.
+  2. **Ở lưu lượng thấp, 2 điểm phần trăm chỉ là vài request.** frontend chỉ 0,46–0,48
+     req/s, khoảng 140 request mỗi cửa sổ 5 phút. 3,8% là cỡ 5 lỗi, 0,7% là cỡ 1 lỗi. Chênh
+     nhau vài request là nằm trong nhiễu, nhưng đủ vượt ngưỡng.
+  3. **p95 của frontend chạm trần histogram (30000 ms) ở cả ba lần đo**, nên phần độ trễ
+     của frontend không cho thấy gì. Độ trễ của productcatalogservice đứng yên (9750 →
+     9750), nên không bỏ phiếu.
+- Ở chế độ `twin_verified`, agent chỉ đo **một** cửa sổ (tương đương T1). Lần này T1 ra
+  `worse` nên hành động sẽ bị chặn. Nhưng chặn được là **nhờ may**: cái "xấu đi" là lỗi
+  tạm thời lúc pod khởi động lại, không phải vì bộ xác minh thấy độ trễ không giảm. Đổi
+  thời điểm đo một chút là ra `better`.
+- Chưa sửa gì. Đây là việc cần bàn ở bước F: ví dụ yêu cầu độ trễ của service bị nghi phải
+  giảm, hoặc dùng phép kiểm thống kê cho tỉ lệ lỗi khi số request nhỏ.
+
+**Chưa có kết quả cho `restart_pod` và `rollback`.** Trên k3s chỉ có một file kết quả S1.
+Hai lần đo đó trong vòng lặp đầu không để lại file, chưa rõ vì sao. Đang hỏi log. Phải đo
+lại, nhất là `rollback`: nó là đối chứng, cho biết phép đo có thấy được độ trễ giảm thật
+khi lỗi thật sự được gỡ hay không.
