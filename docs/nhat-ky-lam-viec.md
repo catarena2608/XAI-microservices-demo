@@ -372,3 +372,49 @@ Tự kiểm bộ chấm E1 trên lời giải thích do luật sinh ra: đạt.
    câu nào chấm đúng.
 3. Quyết có thu hẹp đáp án hành động của S1 không (mục 8).
 4. Bước F (twin) trên cluster mới.
+
+### 12. Đáp án hành động của S1: rà lại, và chuẩn bị đo
+
+**Danh sách hiện tại.**
+- [src_thesis/faults/injectors.py:240](../src_thesis/faults/injectors.py#L240), hàm
+  `inject_latency`: `correct_actions=["adjust_resources", "restart_pod", "rollback"]`.
+- Viết từ phase 2 (commit `2fade389`, 23/8), chưa sửa lần nào.
+- Phép chấm (`metrics.action_correct`) chỉ xét hành động **đầu tiên**: nằm trong danh
+  sách là "đúng".
+
+**Đọc code thì chỉ `rollback` gỡ được lỗi.**
+- Lỗi S1 là biến môi trường `EXTRA_LATENCY=6s` trên productcatalogservice. Service ngủ
+  thêm 6 giây mỗi lần gọi.
+- `adjust_resources` đổi trần CPU; pod mới vẫn mang biến đó. CPU lúc lỗi chỉ dùng 1%
+  trần.
+- `restart_pod` sinh pod mới từ cùng template, vẫn mang biến đó.
+- `rollback` gỡ chính biến `EXTRA_LATENCY` (`ROLLBACK_ENV_KEYS`).
+- Đây mới là **suy ra từ code, chưa đo**.
+
+**Hệ quả nếu suy luận đúng.** Phiên đêm qua có 4/4 ca S1 mà LLM đề xuất tăng CPU, và
+được tính là đúng. Chỉ tính `rollback` thì thành 0/4. Bộ luật chọn `rollback`, nên 4/4
+theo cả hai cách.
+
+**Hai phát hiện phụ khi chuẩn bị đo:**
+- `transient_check.py` dựng hành động **không có tham số**. Khi đó `adjust_resources`
+  đặt trần về mặc định 200m, đúng bằng trần sẵn có của productcatalogservice, tức là
+  **không làm gì**. Script sẽ dừng giữa chừng sau khi đã tiêm lỗi và chờ 330 giây.
+  - Đã thêm `--param KEY=VALUE` (commit `396a52c8`).
+  - Kiểm bằng `--dry-run`: in đúng `cpu_limit=400m`; tham số sai dạng thì báo lỗi, mã
+    thoát 1; `ProposedAction.params_dict()` ra đúng `{'cpu_limit': '400m'}`.
+- Ở S1 lần 1 và lần 3, LLM đề xuất `cpu_limit = "increase"`. Đó không phải giá trị CPU,
+  nên nếu agent thi hành thật thì `set_cpu_limit` sẽ thất bại.
+  - Phép chấm hiện tại không xét tham số, nên vẫn tính là "đúng".
+  - Lần 2 và lần 4 đề xuất 400m.
+
+**Kế hoạch đo**, chạy trên k3s trong tmux. Mỗi lần đo: tiêm S1 → chờ 330 giây → đo T0 →
+thi hành hành động → đo T1 sau 300 giây → đo T2 sau 300 giây nữa → hoàn tác.
+
+| Lần đo | Hành động | Để làm gì |
+|---|---|---|
+| 1 | `adjust_resources`, `cpu_limit=400m` | đúng hành động LLM đề xuất |
+| 2 | `restart_pod` | hành động thứ hai trong danh sách |
+| 3 | `rollback` | **đối chứng dương**: phép đo phải thấy "tốt lên" ở đây. Nếu không thấy thì phép đo hỏng, và kết quả "không tốt lên" của lần 1–2 không tin được |
+
+Mỗi lần khoảng 20–25 phút, cả ba khoảng 70 phút. Không gọi LLM. Kết quả ghi vào
+`data/fidelity/<giờ>_transient_S1_<hành động>.json`.
